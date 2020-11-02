@@ -23,7 +23,7 @@ LOAD_TASKS=1
 LOAD_PREPROC=1
 load_epoch=-1
 
-train_tasks='all'
+train_tasks='mnli,mrpc,qqp,sst'
 eval_tasks='none'
 CLASSIFIER=mlp
 d_hid_cls=512

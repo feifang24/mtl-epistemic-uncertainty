@@ -15,11 +15,11 @@ from allennlp_mods.numeric_field import NumericField
 from tasks import CoLATask, MRPCTask, MultiNLITask, QQPTask, RTETask, \
                   QNLITask, QNLIv2Task, SNLITask, SSTTask, STSBTask, WNLITask
 
-if "cs.nyu.edu" in os.uname()[1] or "dgx" in os.uname()[1]:
-    PATH_PREFIX = '/misc/vlgscratch4/BowmanGroup/awang/'
-else:
-    PATH_PREFIX = '/beegfs/aw3272/'
-PATH_PREFIX = PATH_PREFIX + 'processed_data/mtl-sentence-representations/'
+# if "cs.nyu.edu" in os.uname()[1] or "dgx" in os.uname()[1]:
+#     PATH_PREFIX = '/misc/vlgscratch4/BowmanGroup/awang/'
+# else:
+#     PATH_PREFIX = '/beegfs/aw3272/'
+PATH_PREFIX = '../../glue_data/' #PATH_PREFIX + 'processed_data/mtl-sentence-representations/'
 
 #ALL_TASKS = ['mnli', 'mrpc', 'qqp', 'rte', 'qnli', 'snli', 'sst', 'sts-b', 'wnli', 'cola']
 ALL_TASKS = ['mnli', 'mrpc', 'qqp', 'rte', 'qnliv2', 'snli', 'sst', 'sts-b', 'wnli', 'cola']
