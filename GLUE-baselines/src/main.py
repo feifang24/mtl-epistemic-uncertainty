@@ -6,6 +6,7 @@ import copy
 import random
 import argparse
 import logging as log
+import google.cloud.logging
 import _pickle as pkl
 import ipdb as pdb
 import torch
@@ -116,8 +117,11 @@ def main(arguments):
     args = parser.parse_args(arguments)
 
     # Logistics #
+    client = google.cloud.logging.Client()
+    client.setup_logging()
+    
     log.basicConfig(format='%(asctime)s: %(message)s', level=log.INFO, datefmt='%m/%d %I:%M:%S %p')
-    log_file = os.path.join(args.run_dir, args.log_file)
+    log_file = args.log_file #os.path.join(args.run_dir, args.log_file)
     file_handler = log.FileHandler(log_file)
     log.getLogger().addHandler(file_handler)
     log.info(args)
