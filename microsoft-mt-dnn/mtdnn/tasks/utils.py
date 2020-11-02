@@ -114,7 +114,7 @@ def load_mnli(file_path, kwargs: dict = {}):
     """ Load MNLI """
     header = kwargs.get("header", True)
     multi_snli = kwargs.get("multi_snli", False)
-    is_train = kwargs.get("is_train", True)
+    is_train = 'test' not in file_path # kwargs.get("is_train", True)
     rows = []
     cnt = 0
     with open(file_path, encoding="utf8") as f:
@@ -148,7 +148,7 @@ def load_mrpc(file_path, kwargs: dict = {}):
     """ Load MRPC """
 
     header = kwargs.get("header", True)
-    is_train = kwargs.get("is_train", True)
+    is_train = 'test' not in file_path # kwargs.get("is_train", True)
     rows = []
     cnt = 0
     with open(file_path, encoding="utf8") as f:
@@ -176,7 +176,7 @@ def load_qnli(file_path, kwargs: dict = {}):
     """ Load QNLI for classification"""
 
     header = kwargs.get("header", True)
-    is_train = kwargs.get("is_train", True)
+    is_train = 'test' not in file_path # kwargs.get("is_train", True)
     rows = []
     cnt = 0
     with open(file_path, encoding="utf8") as f:
@@ -208,7 +208,7 @@ def load_qqp(file_path, kwargs: dict = {}):
     """ Load QQP """
 
     header = kwargs.get("header", True)
-    is_train = kwargs.get("is_train", True)
+    is_train = 'test' not in file_path # kwargs.get("is_train", True)
     rows = []
     cnt = 0
     skipped = 0
@@ -248,7 +248,7 @@ def load_rte(file_path, kwargs: dict = {}):
     """ Load RTE """
 
     header = kwargs.get("header", True)
-    is_train = kwargs.get("is_train", True)
+    is_train = 'test' not in file_path # kwargs.get("is_train", True)
     rows = []
     cnt = 0
     with open(file_path, encoding="utf8") as f:
@@ -286,7 +286,7 @@ def load_wnli(file_path, kwargs: dict = {}):
     """ Load WNLI """
 
     header = kwargs.get("header", True)
-    is_train = kwargs.get("is_train", True)
+    is_train = 'test' not in file_path # kwargs.get("is_train", True)
     rows = []
     cnt = 0
     with open(file_path, encoding="utf8") as f:
@@ -324,7 +324,7 @@ def load_sst(file_path, kwargs: dict = {}):
     """ Load SST """
 
     header = kwargs.get("header", True)
-    is_train = kwargs.get("is_train", True)
+    is_train = 'test' not in file_path # kwargs.get("is_train", True)
     rows = []
     cnt = 0
     with open(file_path, encoding="utf8") as f:
@@ -351,7 +351,7 @@ def load_cola(file_path, kwargs: dict = {}):
     """ Load COLA """
 
     header = kwargs.get("header", True)
-    is_train = kwargs.get("is_train", True)
+    is_train = 'test' not in file_path # kwargs.get("is_train", True)
 
     rows = []
     cnt = 0
@@ -378,7 +378,7 @@ def load_stsb(file_path, kwargs: dict = {}):
     """ Load STSB """
 
     header = kwargs.get("header", True)
-    is_train = kwargs.get("is_train", True)
+    is_train = 'test' not in file_path # kwargs.get("is_train", True)
     rows = []
     cnt = 0
     with open(file_path, encoding="utf8") as f:
