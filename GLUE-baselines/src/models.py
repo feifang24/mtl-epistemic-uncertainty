@@ -14,7 +14,7 @@ from allennlp.common.checks import ConfigurationError
 from allennlp.data import Vocabulary
 from allennlp.models.model import Model
 from allennlp.modules import Highway#, MatrixAttention
-from allennlp.modules.matrix_attention import DotProductMatrixAttention
+from allennlp.modules.matrix_attention import MatrixAttention
 from allennlp.modules import Seq2SeqEncoder, SimilarityFunction, TimeDistributed, TextFieldEmbedder
 from allennlp.nn import util, InitializerApplicator, RegularizerApplicator
 from allennlp.modules.text_field_embedders import BasicTextFieldEmbedder
@@ -28,15 +28,15 @@ from tasks import STS14Task, STSBTask, CoLATask
 from scipy.stats import pearsonr, spearmanr
 from sklearn.metrics import matthews_corrcoef
 
-# CoVe stuff
-if "cs.nyu.edu" in os.uname()[1] or "dgx" in os.uname()[1]:
-    PATH_PREFIX = '/misc/vlgscratch4/BowmanGroup/awang/'
-else:
-    PATH_PREFIX = '/beegfs/aw3272/'
+# # CoVe stuff
+# if "cs.nyu.edu" in os.uname()[1] or "dgx" in os.uname()[1]:
+#     PATH_PREFIX = '/misc/vlgscratch4/BowmanGroup/awang/'
+# else:
+#     PATH_PREFIX = '/beegfs/aw3272/'
 
-PATH_TO_COVE = PATH_PREFIX + '/models/cove'
-sys.path.append(PATH_TO_COVE)
-from cove import MTLSTM as cove_lstm
+# PATH_TO_COVE = PATH_PREFIX + '/models/cove'
+# sys.path.append(PATH_TO_COVE)
+# from cove import MTLSTM as cove_lstm
 
 # Elmo stuff
 ELMO_OPT_PATH = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x4096_512_2048cnn_2xhighway/elmo_2x4096_512_2048cnn_2xhighway_options.json" # pylint: disable=line-too-long
@@ -494,7 +494,7 @@ class HeadlessPairAttnEncoder(Model):
             self._highway_layer = TimeDistributed(Highway(d_emb, num_highway_layers))
 
         self._phrase_layer = phrase_layer
-        self._matrix_attention = DotProductMatrixAttention()
+        self._matrix_attention = MatrixAttention()
         self._modeling_layer = modeling_layer
         self._cove = cove_layer
         self._elmo = elmo_layer

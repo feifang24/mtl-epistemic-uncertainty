@@ -8,9 +8,9 @@
 # SBATCH -t 4-00:00
 # SBATCH --gres=gpu:p40:1
 
-SCRATCH_PREFIX='/misc/vlgscratch4/BowmanGroup/awang/'
+SCRATCH_PREFIX='gs://cs330' #'/misc/vlgscratch4/BowmanGroup/awang/'
 #SCRATCH_PREFIX='/beegfs/aw3272/'
-PROJECT_NAME='glue-baselines'
+PROJECT_NAME='bilstm'
 EXP_NAME="debug"
 RUN_NAME="debug"
 GPUID=0
@@ -23,7 +23,7 @@ LOAD_TASKS=1
 LOAD_PREPROC=1
 load_epoch=-1
 
-train_tasks='mnli,mrpc,qqp,sst'
+train_tasks='sst,mrpc' #,mnli,qqp'
 eval_tasks='none'
 CLASSIFIER=mlp
 d_hid_cls=512

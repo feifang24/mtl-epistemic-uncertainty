@@ -1,6 +1,6 @@
 #!/bin/bash
 
-scr_prefix='/misc/vlgscratch4/BowmanGroup/awang/'
+scr_prefix='gs://cs330' #'/misc/vlgscratch4/BowmanGroup/awang/'
 gpuid=${2:-0}
 seed=${3:-111}
 
