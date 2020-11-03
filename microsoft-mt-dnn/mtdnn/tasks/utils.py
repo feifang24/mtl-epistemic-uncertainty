@@ -5,6 +5,7 @@ import pdb
 from random import shuffle
 from sys import path
 
+import tensorflow.io.gfile as gfile
 from mtdnn.common.metrics import calc_metrics
 from mtdnn.common.types import DataFormat
 
@@ -489,7 +490,7 @@ def load_conll_chunk(file_path, kwargs: dict = {}):
 
 def submit(path, data, label_dict=None):
     header = "index\tprediction"
-    with open(path, "w") as writer:
+    with gfile.GFile(path, "w") as writer:
         predictions, uids = data["predictions"], data["uids"]
         writer.write("{}\n".format(header))
         assert len(predictions) == len(uids)

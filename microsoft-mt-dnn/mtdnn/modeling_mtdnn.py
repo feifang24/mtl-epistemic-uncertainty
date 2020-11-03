@@ -12,6 +12,7 @@ import sys
 from datetime import datetime
 
 import numpy as np
+import tensorflow.io.gfile as gfile
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
@@ -125,7 +126,7 @@ class MTDNNModel(MTDNNPretrainedModel):
         multitask_train_dataloader: DataLoader = None,
         dev_dataloaders_list: list = None,  # list of dataloaders
         test_dataloaders_list: list = None,  # list of dataloaders
-        test_datasets_list: list = ["mnli_mismatched", "mnli_matched"],
+        test_datasets_list: list = [],
         output_dir: str = "checkpoint",
         log_dir: str = "tensorboard_logdir",
     ):
@@ -144,7 +145,6 @@ class MTDNNModel(MTDNNPretrainedModel):
         assert (
             multitask_train_dataloader
         ), "DataLoader for multiple tasks cannot be None"
-        assert test_datasets_list, "Pass a list of test dataset prefixes"
 
         super(MTDNNModel, self).__init__(config)
 
@@ -162,7 +162,7 @@ class MTDNNModel(MTDNNPretrainedModel):
         self.multitask_train_dataloader = multitask_train_dataloader
         self.dev_dataloaders_list = dev_dataloaders_list
         self.test_dataloaders_list = test_dataloaders_list
-        self.test_datasets_list = test_datasets_list
+        self.test_datasets_list = self._configure_test_ds(test_datasets_list)
         self.output_dir = output_dir
         self.log_dir = log_dir
 
@@ -251,6 +251,16 @@ class MTDNNModel(MTDNNPretrainedModel):
         self.para_swapped = False
         self.optimizer.zero_grad()
         self._setup_lossmap()
+
+    def _configure_test_ds(self, test_datasets_list):
+        if test_datasets_list: return test_datasets_list
+        result = list(self.task_defs.get_task_names())
+        if 'mnli' in result:
+            result.remove('mnli')
+            result.append('mnli_matched')
+            result.append('mnli_mismatched')
+        return result
+
 
     def _get_param_groups(self):
         no_decay = ["bias", "gamma", "beta", "LayerNorm.bias", "LayerNorm.weight"]
@@ -633,9 +643,10 @@ class MTDNNModel(MTDNNPretrainedModel):
         """
 
         # Load a trained checkpoint if a valid model checkpoint
-        if trained_model_chckpt and os.path.exists(trained_model_chckpt):
-            logger.info(f"Running predictions using: {trained_model_chckpt}")
+        if trained_model_chckpt and gfile.exists(trained_model_chckpt):
+            logger.info(f"Running predictions using: {trained_model_chckpt}. This may take 3 minutes.")
             self.load(trained_model_chckpt)
+            logger.info("Checkpoint loaded.")
 
         # Create batches and train
         start = datetime.now()
@@ -749,11 +760,11 @@ class MTDNNModel(MTDNNPretrainedModel):
             "optimizer": self.optimizer.state_dict(),
             "config": self.config,
         }
-        torch.save(params, filename)
+        torch.save(params, gfile.GFile(filename, mode='wb'))
         logger.info("model saved to {}".format(filename))
 
     def load(self, checkpoint):
-        model_state_dict = torch.load(checkpoint)
+        model_state_dict = torch.load(gfile.GFile(checkpoint, mode='rb'))
         self.network.load_state_dict(model_state_dict["state"], strict=False)
         self.optimizer.load_state_dict(model_state_dict["optimizer"])
         self.config = model_state_dict["config"]
