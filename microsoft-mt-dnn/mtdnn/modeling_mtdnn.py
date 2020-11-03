@@ -261,11 +261,13 @@ class MTDNNModel(MTDNNPretrainedModel):
 
     def _configure_test_ds(self, test_datasets_list):
         if test_datasets_list: return test_datasets_list
-        result = list(self.task_defs.get_task_names())
-        if 'mnli' in result:
-            result.remove('mnli')
-            result.append('mnli_matched')
-            result.append('mnli_mismatched')
+        result = []
+        for task in self.task_defs.get_task_names():
+            if task == 'mnli':
+                result.append('mnli_matched')
+                result.append('mnli_mismatched')  
+            else:
+                result.append(task)
         return result
 
 
@@ -671,8 +673,8 @@ class MTDNNModel(MTDNNPretrainedModel):
             dev_loss_agg = AverageMeter()
             dev_loss_by_task = {}
             for idx, dataset in enumerate(self.test_datasets_list):
+                logger.info(f"Evaluating on dev ds {idx}: {dataset.upper()}")
                 prefix = dataset.split("_")[0]
-                label_dict = self.task_defs.global_map.get(prefix, None)
                 results = self._predict(idx, prefix, dataset, eval_type='dev', saved_epoch_idx=epoch)
                 
                 avg_loss = results['avg_loss']
