@@ -16,6 +16,7 @@ from tempfile import TemporaryDirectory
 
 import numpy
 import requests
+import tensorflow.io.gfile as gfile
 import torch
 from tqdm import tqdm
 from time import gmtime, strftime
@@ -60,7 +61,7 @@ class MTDNNCommonUtils:
 
     @staticmethod
     def dump(path, data):
-        with open(path, "w") as f:
+        with gfile.GFile(path, "w") as f:
             json.dump(data, f)
 
     @staticmethod
@@ -100,7 +101,8 @@ class MTDNNCommonUtils:
 
     @staticmethod
     def create_directory_if_not_exists(dir_path: str):
-        os.makedirs(dir_path, exist_ok=True)
+        gfile.makedirs(dir_path)
+        # os.makedirs(dir_path, exist_ok=True)
 
     @staticmethod
     @contextmanager

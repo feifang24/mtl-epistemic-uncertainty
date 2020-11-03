@@ -133,3 +133,4 @@ dmypy.json
 *glue_data.zip
 
 .vscode
+*wandb/
