@@ -18,7 +18,6 @@ from mtdnn.dataset_mtdnn import (
     MTDNNMultiTaskDataset,
     MTDNNSingleTaskDataset,
 )
-from mtdnn.modeling_mtdnn import MTDNNModel
 from mtdnn.tasks.config import MTDNNTaskDefs
 from mtdnn.tasks.utils import submit
 

@@ -58,6 +58,7 @@ from mtdnn.common.squad_utils import extract_answer, merge_answers, select_answe
 from mtdnn.common.types import DataFormat, EncoderModelType, TaskType
 from mtdnn.common.utils import MTDNNCommonUtils
 from mtdnn.configuration_mtdnn import MTDNNConfig
+from mtdnn.process_mtdnn import MTDNNDataProcess
 from mtdnn.dataset_mtdnn import MTDNNCollater
 from mtdnn.tasks.config import MTDNNTaskDefs
 from mtdnn.tasks.utils import submit
@@ -117,17 +118,8 @@ class MTDNNModel(MTDNNPretrainedModel):
         self,
         config: MTDNNConfig,
         task_defs: MTDNNTaskDefs,
+        data_processor: MTDNNDataProcess,
         pretrained_model_name: str = "mtdnn-base-uncased",
-        num_train_step: int = -1,
-        decoder_opts: list = None,
-        task_types: list = None,
-        dropout_list: list = None,
-        loss_types: list = None,
-        kd_loss_types: list = None,
-        tasks_nclass_list: list = None,
-        multitask_train_dataloader: DataLoader = None,
-        dev_dataloaders_list: list = None,  # list of dataloaders
-        test_dataloaders_list: list = None,  # list of dataloaders
         test_datasets_list: list = [],
         output_dir: str = "checkpoint",
     ):
@@ -136,6 +128,19 @@ class MTDNNModel(MTDNNPretrainedModel):
         assert (
             config.init_checkpoint in self.supported_init_checkpoints()
         ), f"Initial checkpoint must be in {self.supported_init_checkpoints()}"
+
+        num_train_step = data_processor.get_num_all_batches()
+        decoder_opts = data_processor.get_decoder_options_list()
+        task_types = data_processor.get_task_types_list()
+        dropout_list = data_processor.get_tasks_dropout_prob_list()
+        loss_types = data_processor.get_loss_types_list()
+        kd_loss_types = data_processor.get_kd_loss_types_list()
+        tasks_nclass_list = data_processor.get_task_nclass_list()
+
+        # data loaders
+        multitask_train_dataloader = data_processor.get_train_dataloader()
+        dev_dataloaders_list = data_processor.get_dev_dataloaders()
+        test_dataloaders_list = data_processor.get_test_dataloaders()
 
         assert decoder_opts, "Decoder options list is required!"
         assert task_types, "Task types list is required!"
@@ -148,7 +153,7 @@ class MTDNNModel(MTDNNPretrainedModel):
         ), "DataLoader for multiple tasks cannot be None"
 
         super(MTDNNModel, self).__init__(config)
-        wandb.init(project='mtl-uncertainty', config=config.to_dict())
+        
         # Initialize model config and update with training options
         self.config = config
         self.update_config_with_training_opts(
@@ -159,6 +164,8 @@ class MTDNNModel(MTDNNPretrainedModel):
             kd_loss_types,
             tasks_nclass_list,
         )
+        wandb.init(project='mtl-uncertainty', config=self.config.to_dict())
+        self.tasks = data_processor.tasks # {task_name: task_idx}
         self.task_defs = task_defs
         self.multitask_train_dataloader = multitask_train_dataloader
         self.dev_dataloaders_list = dev_dataloaders_list
@@ -228,6 +235,7 @@ class MTDNNModel(MTDNNPretrainedModel):
         )
         self.local_updates = 0
         self.train_loss = AverageMeter()
+        self.train_loss_by_task = [AverageMeter() for _ in range(len(self.tasks))]
         self.network = SANBERTNetwork(
             init_checkpoint_model=self.bert_model,
             pooler=self.pooler,
@@ -454,6 +462,7 @@ class MTDNNModel(MTDNNPretrainedModel):
             )
             loss = loss + kd_loss
 
+        self.train_loss_by_task[task_id].update(loss.item(), batch_data[batch_meta["token_id"]].size(0))
         self.train_loss.update(loss.item(), batch_data[batch_meta["token_id"]].size(0))
         # scale loss
         loss = loss / (self.config.grad_accumulation_step or 1)
@@ -488,6 +497,7 @@ class MTDNNModel(MTDNNPretrainedModel):
         label_mapper=None,
         task_type=TaskType.Classification,
     ):
+        eval_loss = AverageMeter()
         if use_cuda:
             self.cuda()
         predictions = []
@@ -501,11 +511,12 @@ class MTDNNModel(MTDNNPretrainedModel):
             batch_info, batch_data = MTDNNCollater.patch_data(
                 use_cuda, batch_info, batch_data
             )
-            score, pred, gold = self._predict_batch(batch_info, batch_data)
+            score, pred, gold, loss = self._predict_batch(batch_info, batch_data)
             predictions.extend(pred)
             golds.extend(gold)
             scores.extend(score)
             ids.extend(batch_info["uids"])
+            eval_loss.update(loss.item(), len(batch_info["uids"]))
 
         if task_type == TaskType.Span:
             golds = merge_answers(ids, golds)
@@ -514,7 +525,7 @@ class MTDNNModel(MTDNNPretrainedModel):
             metrics = calc_metrics(
                 metric_meta, golds, predictions, scores, label_mapper
             )
-        return metrics, predictions, scores, golds, ids
+        return metrics, predictions, scores, golds, ids, (eval_loss.avg, eval_loss.count)
 
     def _predict_batch(self, batch_meta, batch_data):
         self.network.eval()
@@ -525,7 +536,28 @@ class MTDNNModel(MTDNNPretrainedModel):
             inputs.append(None)
             inputs.append(None)
         inputs.append(task_id)
+
+        # get logits (and val loss if we have labels)
+        label = batch_meta["label"]
+        target = batch_data[label] if type(label) is int else torch.tensor(label)
+        target = self._to_cuda(target) if self.config.cuda else target
+
+        weight = None
+        if self.config.weighted_on:
+            if self.config.cuda:
+                weight = batch_data[batch_meta["factor"]].cuda(
+                    device=self.config.cuda_device, non_blocking=True
+                )
+            else:
+                weight = batch_data[batch_meta["factor"]]
+
         score = self.mnetwork(*inputs)
+        loss = None
+        if self.task_loss_criterion[task_id] and (target is not None):
+            loss = self.task_loss_criterion[task_id](
+                score, target, weight, ignore_index=-1
+            )
+
         if task_type == TaskType.Ranking:
             score = score.contiguous().view(-1, batch_meta["pairwise_size"])
             assert task_type == TaskType.Ranking
@@ -538,7 +570,7 @@ class MTDNNModel(MTDNNPretrainedModel):
                 predict[idx, pos] = 1
             predict = predict.reshape(-1).tolist()
             score = score.reshape(-1).tolist()
-            return score, predict, batch_meta["true_label"]
+            return score, predict, batch_meta["true_label"], loss
         elif task_type == TaskType.SequenceLabeling:
             mask = batch_data[batch_meta["mask"]]
             score = score.contiguous()
@@ -550,7 +582,7 @@ class MTDNNModel(MTDNNPretrainedModel):
             for idx, p in enumerate(predict):
                 final_predict.append(p[: valied_lenght[idx]])
             score = score.reshape(-1).tolist()
-            return score, final_predict, batch_meta["label"]
+            return score, final_predict, batch_meta["label"], loss
         elif task_type == TaskType.Span:
             start, end = score
             predictions = []
@@ -562,7 +594,7 @@ class MTDNNModel(MTDNNPretrainedModel):
                     end,
                     self.config.get("max_answer_len", 5),
                 )
-            return scores, predictions, batch_meta["answer"]
+            return scores, predictions, batch_meta["answer"], loss
         else:
             if task_type == TaskType.Classification:
                 score = F.softmax(score, dim=1)
@@ -570,7 +602,7 @@ class MTDNNModel(MTDNNPretrainedModel):
             score = score.numpy()
             predict = np.argmax(score, axis=1).tolist()
             score = score.reshape(-1).tolist()
-        return score, predict, batch_meta["label"]
+        return score, predict, batch_meta["label"], loss
 
     def fit(self, epochs=0):
         """ Fit model to training datasets """
@@ -625,24 +657,40 @@ class MTDNNModel(MTDNNPretrainedModel):
                     logger.info(f"Saving mt-dnn model to {model_file}")
                     self.save(model_file)
 
-            # TODO: Alternatively, we need to refactor save function
-            # and move into prediction
-            # Saving each checkpoint after model training
+            # Eval and save checkpoint after each epoch
             logger.info('=' * 5 + f' End of EPOCH {epoch} ' + '=' * 5)
-            logger.info(f'Train loss: {self.train_loss.avg}')
+            logger.info(f'Train loss (epoch avg): {self.train_loss.avg}')
             wandb.log({'train_loss': self.train_loss.avg}, step=epoch)
+            epoch_train_loss_by_task = {task: self.train_loss_by_task[task_idx].avg
+                                        for task, task_idx in self.tasks.items()
+                                        }
+            wandb.log({f'train_loss_by_task/{task}': loss 
+                        for task, loss in epoch_train_loss_by_task.items()}, step=epoch)
 
             # dev eval
+            dev_loss_agg = AverageMeter()
+            dev_loss_by_task = {}
             for idx, dataset in enumerate(self.test_datasets_list):
                 prefix = dataset.split("_")[0]
                 label_dict = self.task_defs.global_map.get(prefix, None)
                 results = self._predict(idx, prefix, dataset, eval_type='dev', saved_epoch_idx=epoch)
+                
+                avg_loss = results['avg_loss']
+                num_samples = results['num_samples']
+                dev_loss_agg.update(avg_loss, n=num_samples)
+                dev_loss_by_task[dataset] = avg_loss
+                logger.info(f"Task {dataset} -- Dev loss: {avg_loss:.3f}")
+
                 metrics = results['metrics']
                 for key, val in metrics.items():
                     logger.info(
                             f"Task {dataset} -- Dev {key}: {val:.3f}"
                         )
                     wandb.log({f'{dataset}/dev_{key}': val}, step=epoch)
+            logger.info(f'Dev loss: {dev_loss_agg.avg}')
+            wandb.log({'dev_loss': dev_loss_agg.avg}, step=epoch)
+            wandb.log({f'dev_loss_by_task/{task}': loss 
+                        for task, loss in dev_loss_by_task.items()}, step=epoch)
             
             model_file = os.path.join(self.output_dir, "model_{}.pt".format(epoch))
             logger.info(f"Saving mt-dnn model to {model_file}")
@@ -670,6 +718,7 @@ class MTDNNModel(MTDNNPretrainedModel):
                     scores,
                     golds,
                     ids,
+                    (eval_ds_avg_loss, eval_ds_num_samples)
                 ) = self.eval_mode(
                     data,
                     metric_meta=self.task_defs.metric_meta_map[eval_ds_prefix],
@@ -678,7 +727,8 @@ class MTDNNModel(MTDNNPretrainedModel):
                     label_mapper=label_dict,
                     task_type=self.task_defs.task_type_map[eval_ds_prefix],
                 )
-            score_file_prefix = f"{eval_ds_name}_{eval_type}_scores" + f'_{saved_epoch_idx}' if saved_epoch_idx else ""  
+            score_file_prefix = f"{eval_ds_name}_{eval_type}_scores" \
+                                + f'_{saved_epoch_idx}' if saved_epoch_idx is not None else ""  
             score_file = os.path.join(self.output_dir, score_file_prefix + ".json")
             results = {
                 "metrics": metrics,
@@ -691,7 +741,7 @@ class MTDNNModel(MTDNNPretrainedModel):
                 official_score_file = os.path.join(self.output_dir, score_file_prefix + ".tsv")
                 submit(official_score_file, results, label_dict)
             
-        return results
+        return {"avg_loss": eval_ds_avg_loss, "num_samples": eval_ds_num_samples, **results}
 
 
 
@@ -706,7 +756,7 @@ class MTDNNModel(MTDNNPretrainedModel):
             self.load(trained_model_chckpt)
             logger.info("Checkpoint loaded.")
 
-        # dev eval
+        # test eval
         for idx, dataset in enumerate(self.test_datasets_list):
             prefix = dataset.split("_")[0]
             results = self._predict(idx, prefix, dataset, eval_type='test')
