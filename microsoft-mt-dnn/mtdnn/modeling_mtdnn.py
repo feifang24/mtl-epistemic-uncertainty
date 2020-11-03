@@ -149,7 +149,6 @@ class MTDNNModel(MTDNNPretrainedModel):
 
         super(MTDNNModel, self).__init__(config)
         wandb.init(project='mtl-uncertainty', config=config.to_dict())
-
         # Initialize model config and update with training options
         self.config = config
         self.update_config_with_training_opts(
@@ -629,6 +628,8 @@ class MTDNNModel(MTDNNPretrainedModel):
             # TODO: Alternatively, we need to refactor save function
             # and move into prediction
             # Saving each checkpoint after model training
+            logger.info('=' * 5 + f' End of EPOCH {epoch} ' + '=' * 5)
+            logger.info(f'Train loss: {self.train_loss.avg}')
             wandb.log({'train_loss': self.train_loss.avg}, step=epoch)
 
             # dev eval
@@ -638,6 +639,9 @@ class MTDNNModel(MTDNNPretrainedModel):
                 results = self._predict(idx, prefix, dataset, eval_type='dev', saved_epoch_idx=epoch)
                 metrics = results['metrics']
                 for key, val in metrics.items():
+                    logger.info(
+                            f"Task {dataset} -- Dev {key}: {val:.3f}"
+                        )
                     wandb.log({f'{dataset}/dev_{key}': val}, step=epoch)
             
             model_file = os.path.join(self.output_dir, "model_{}.pt".format(epoch))
@@ -691,7 +695,7 @@ class MTDNNModel(MTDNNPretrainedModel):
 
 
 
-    def predict(self, trained_model_chckpt: str = None, saved_epoch_idx: int = 0):
+    def predict(self, trained_model_chckpt: str = None):
         """ 
         Inference of model on test datasets
         """
