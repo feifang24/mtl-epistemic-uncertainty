@@ -32,10 +32,11 @@ class MTDNNMultiTaskBatchSampler(BatchSampler):
             train_data_list.append(
                 self._get_shuffled_index_batches(len(dataset), batch_size)
             )
-        self._train_data_list = train_data_list
+        self._train_data_list = train_data_list # each elt in list corresponds to the batches of a single task
 
     @staticmethod
     def _get_shuffled_index_batches(dataset_len, batch_size):
+        """ Returns a list of lists, where each list contains the example indices of a batch. """
         index_batches = [
             list(range(i, min(i + batch_size, dataset_len)))
             for i in range(0, dataset_len, batch_size)
@@ -44,6 +45,7 @@ class MTDNNMultiTaskBatchSampler(BatchSampler):
         return index_batches
 
     def __len__(self):
+        """ Returns the total number of batches. """
         return sum(len(train_data) for train_data in self._train_data_list)
 
     def __iter__(self):
@@ -58,8 +60,10 @@ class MTDNNMultiTaskBatchSampler(BatchSampler):
 
     @staticmethod
     def _gen_task_indices(train_data_list, mix_opt, extra_task_ratio):
+        """ Returns list of length num_total_batches, where # occurrences of i = # batches in task i"""
         all_indices = []
         if len(train_data_list) > 1 and extra_task_ratio > 0:
+            # used for single-task finetuning only
             main_indices = [0] * len(train_data_list[0])
             extra_indices = []
             for i in range(1, len(train_data_list)):
