@@ -644,9 +644,6 @@ class MTDNNModel(MTDNNPretrainedModel):
             if self.config.uncertainty_based_sampling and epoch > 1:
                 batches = self._rerank_batches(batches, start_idx=0, task_weights=uncertainties_by_task)
             for idx in range(len(batches)):
-            # for idx, (batch_meta, batch_data) in enumerate(
-            #     self.multitask_train_dataloader
-            # ):
                 batch_meta, batch_data = batches[idx]
                 batch_meta, batch_data = MTDNNCollater.patch_data(
                     self.config.cuda, batch_meta, batch_data
@@ -723,7 +720,6 @@ class MTDNNModel(MTDNNPretrainedModel):
                     )
                 log_dict[f'{dataset}/dev_{key}'] = val
             
-            # TODO: implement uncertainty
             uncertainty = results['uncertainty']
             log_dict[f'uncertainty_by_task/{dataset}'] = uncertainty
             if prefix not in uncertainties_by_task:
