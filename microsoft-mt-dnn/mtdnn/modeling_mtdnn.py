@@ -51,10 +51,12 @@ from transformers import (
 from mtdnn.common.archive_maps import PRETRAINED_MODEL_ARCHIVE_MAP
 from mtdnn.common.average_meter import AverageMeter
 from mtdnn.common.bert_optim import Adamax, RAdam
+from mtdnn.common.dropout_wrapper import DropoutWrapper
 from mtdnn.common.linear_pooler import LinearPooler
 from mtdnn.common.loss import LOSS_REGISTRY
 from mtdnn.common.metrics import calc_metrics
 from mtdnn.common.san import SANBERTNetwork, SANClassifier
+from mtdnn.common.uncertainty import BatchBALD
 from mtdnn.common.san_model import SanModel
 from mtdnn.common.squad_utils import extract_answer, merge_answers, select_answers
 from mtdnn.common.types import DataFormat, EncoderModelType, TaskType
@@ -101,17 +103,17 @@ class MTDNNPretrainedModel(nn.Module):
 
 class MTDNNModel(MTDNNPretrainedModel):
     """Instance of an MTDNN Model
-    
+
     Arguments:
         MTDNNPretrainedModel {BertPretrainedModel} -- Inherited from Bert Pretrained
-        config  {MTDNNConfig} -- MTDNN Configuration Object 
+        config  {MTDNNConfig} -- MTDNN Configuration Object
         pretrained_model_name {str} -- Name of the pretrained model to initial checkpoint
         num_train_step  {int} -- Number of steps to take each training
-    
+
     Raises:
         RuntimeError: [description]
         ImportError: [description]
-    
+
     Returns:
         MTDNNModel -- An Instance of an MTDNN Model
     """
@@ -155,7 +157,7 @@ class MTDNNModel(MTDNNPretrainedModel):
         ), "DataLoader for multiple tasks cannot be None"
 
         super(MTDNNModel, self).__init__(config)
-        
+
         # Initialize model config and update with training options
         self.config = config
         self.update_config_with_training_opts(
@@ -267,7 +269,7 @@ class MTDNNModel(MTDNNPretrainedModel):
         for task in self.task_defs.get_task_names():
             if task == 'mnli':
                 result.append('mnli_matched')
-                result.append('mnli_mismatched')  
+                result.append('mnli_mismatched')
             else:
                 result.append(task)
         return result
@@ -499,7 +501,7 @@ class MTDNNModel(MTDNNPretrainedModel):
         use_cuda=True,
         with_label=True,
         label_mapper=None,
-        task_type=TaskType.Classification,
+        task_type=TaskType.Classification
     ):
         eval_loss = AverageMeter()
         if use_cuda:
@@ -507,6 +509,7 @@ class MTDNNModel(MTDNNPretrainedModel):
         predictions = []
         golds = []
         scores = []
+        uncertainties = []
         ids = []
         metrics = {}
         for idx, (batch_info, batch_data) in enumerate(data):
@@ -515,10 +518,11 @@ class MTDNNModel(MTDNNPretrainedModel):
             batch_info, batch_data = MTDNNCollater.patch_data(
                 use_cuda, batch_info, batch_data
             )
-            score, pred, gold, loss = self._predict_batch(batch_info, batch_data)
+            score, pred, gold, loss, uncertainty = self._predict_batch(batch_info, batch_data)
             predictions.extend(pred)
             golds.extend(gold)
             scores.extend(score)
+            uncertainties.extend(uncertainty)
             ids.extend(batch_info["uids"])
             eval_loss.update(loss.item(), len(batch_info["uids"]))
 
@@ -529,7 +533,7 @@ class MTDNNModel(MTDNNPretrainedModel):
             metrics = calc_metrics(
                 metric_meta, golds, predictions, scores, label_mapper
             )
-        return metrics, predictions, scores, golds, ids, (eval_loss.avg, eval_loss.count)
+        return metrics, predictions, scores, golds, ids, (eval_loss.avg, eval_loss.count), np.mean(uncertainties)
 
     def _predict_batch(self, batch_meta, batch_data):
         self.network.eval()
@@ -556,6 +560,18 @@ class MTDNNModel(MTDNNPretrainedModel):
                 weight = batch_data[batch_meta["factor"]]
 
         score = self.mnetwork(*inputs)
+        if self.config.uncertainty_based_sampling:
+            def apply_dropout(m):
+                if isinstance(m, DropoutWrapper):
+                    m.train()
+            self.network.apply(apply_dropout)
+            mc_sample_scores = torch.stack([self.mnetwork(*inputs) for _ in range(self.config.mc_dropout_samples)], -1)
+            mc_sample_scores = F.softmax(mc_sample_scores, dim=1).data.cpu().numpy()
+            batch_bald = BatchBALD(num_samples=10, num_draw=500, shuffle_prop=0.0, reverse=True, reduction='mean')
+            uncertainty = batch_bald.get_uncertainties(mc_sample_scores)
+        else:
+            uncertainty = 1.0
+
         loss = None
         if self.task_loss_criterion[task_id] and (target is not None):
             loss = self.task_loss_criterion[task_id](
@@ -606,8 +622,8 @@ class MTDNNModel(MTDNNPretrainedModel):
             score = score.numpy()
             predict = np.argmax(score, axis=1).tolist()
             score = score.reshape(-1).tolist()
-        return score, predict, batch_meta["label"], loss
-    
+        return score, predict, batch_meta["label"], loss, uncertainty
+
     def _rerank_batches(self, batches, start_idx, task_weights, softmax=False):
         def weights_to_probs(weights):
             if softmax:
@@ -692,7 +708,7 @@ class MTDNNModel(MTDNNPretrainedModel):
             logger.info(f'Train loss (epoch avg): {self.train_loss.avg}')
             val_logs, uncertainties_by_task = self._eval_on_dev(epoch, save_dev_scores=True)
             self._log_training(val_logs)
-            
+
             model_file = os.path.join(self.output_dir, "model_{}.pt".format(epoch))
             logger.info(f"Saving mt-dnn model to {model_file}")
             self.save(model_file)
@@ -706,7 +722,7 @@ class MTDNNModel(MTDNNPretrainedModel):
             logger.info(f"Evaluating on dev ds {idx}: {dataset.upper()}")
             prefix = dataset.split("_")[0]
             results = self._predict(idx, prefix, dataset, eval_type='dev', saved_epoch_idx=epoch, save_scores=save_dev_scores)
-            
+
             avg_loss = results['avg_loss']
             num_samples = results['num_samples']
             dev_loss_agg.update(avg_loss, n=num_samples)
@@ -717,7 +733,7 @@ class MTDNNModel(MTDNNPretrainedModel):
             for key, val in metrics.items():
                 logger.info(f"Task {dataset} -- Dev {key}: {val:.3f}")
                 log_dict[f'{dataset}/dev_{key}'] = val
-            
+
             uncertainty = results['uncertainty']
             logger.info(f"Task {dataset} -- Dev uncertainty: {uncertainty:.3f}")
             log_dict[f'uncertainty_by_task/{dataset}'] = uncertainty
@@ -729,7 +745,7 @@ class MTDNNModel(MTDNNPretrainedModel):
                 uncertainties_by_task[prefix] /= 2
         logger.info(f'Dev loss: {dev_loss_agg.avg}')
         log_dict['dev_loss'] = dev_loss_agg.avg
-        log_dict.update({f'dev_loss_by_task/{task}': loss 
+        log_dict.update({f'dev_loss_by_task/{task}': loss
                     for task, loss in dev_loss_by_task.items()})
         return log_dict, uncertainties_by_task
 
@@ -743,7 +759,7 @@ class MTDNNModel(MTDNNPretrainedModel):
 
 
     def _predict(self, eval_ds_idx, eval_ds_prefix, eval_ds_name, eval_type='dev', saved_epoch_idx=None, save_scores=True):
-        if eval_type not in {'dev', 'test'}: 
+        if eval_type not in {'dev', 'test'}:
             raise ValueError("eval_type must be one of the following: 'dev' or 'test'.")
         is_dev = eval_type == 'dev'
 
@@ -764,32 +780,30 @@ class MTDNNModel(MTDNNPretrainedModel):
                     scores,
                     golds,
                     ids,
-                    (eval_ds_avg_loss, eval_ds_num_samples)
+                    (eval_ds_avg_loss, eval_ds_num_samples),
+                    uncertainty,
                 ) = self.eval_mode(
                     data,
                     metric_meta=self.task_defs.metric_meta_map[eval_ds_prefix],
                     use_cuda=self.config.cuda,
                     with_label=is_dev,
                     label_mapper=label_dict,
-                    task_type=self.task_defs.task_type_map[eval_ds_prefix],
+                    task_type=self.task_defs.task_type_map[eval_ds_prefix]
                 )
             results = {"metrics": metrics,
                         "predictions": predictions,
                         "uids": ids,
                         "scores": scores,
+                        "uncertainty": uncertainty
                         }
-
             if save_scores:
                 score_file_prefix = f"{eval_ds_name}_{eval_type}_scores" \
-                                    + f'_{saved_epoch_idx}' if saved_epoch_idx is not None else ""  
+                                    + f'_{saved_epoch_idx}' if saved_epoch_idx is not None else ""
                 score_file = os.path.join(self.output_dir, score_file_prefix + ".json")
                 MTDNNCommonUtils.dump(score_file, results)
                 if self.config.use_glue_format:
                     official_score_file = os.path.join(self.output_dir, score_file_prefix + ".tsv")
                     submit(official_score_file, results, label_dict)
-            
-            # TODO: below is placeholder code for uncertainty; modify after integration
-            results['uncertainty'] = 1.
 
             results.update({"avg_loss": eval_ds_avg_loss, "num_samples": eval_ds_num_samples})
 
@@ -798,7 +812,7 @@ class MTDNNModel(MTDNNPretrainedModel):
 
 
     def predict(self, trained_model_chckpt: str = None):
-        """ 
+        """
         Inference of model on test datasets
         """
 
@@ -812,7 +826,7 @@ class MTDNNModel(MTDNNPretrainedModel):
         for idx, dataset in enumerate(self.test_datasets_list):
             prefix = dataset.split("_")[0]
             results = self._predict(idx, prefix, dataset, eval_type='test')
-            if results: 
+            if results:
                 logger.info(f"[new test scores saved for {dataset}.]")
             else:
                 logger.info(f"Data not found for {dataset}.")

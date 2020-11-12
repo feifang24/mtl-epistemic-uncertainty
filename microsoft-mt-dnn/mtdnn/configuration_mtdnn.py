@@ -121,13 +121,14 @@ class MTDNNConfig(PretrainedConfig):
         mkd_opt=0,
         weighted_on=False,
         uncertainty_based_sampling=False,
+        mc_dropout_samples=100,
         **kwargs,
     ):
         # basic Configuration validation
         # assert inital checkpoint and encoder type are same
         assert init_checkpoint.startswith(
             encoder_checkpoint_map[encoder_type]
-        ), """Encoder type and initial checkpoint mismatch. 
+        ), """Encoder type and initial checkpoint mismatch.
             1 - Bert models
             2 - Roberta models
             """
@@ -197,5 +198,5 @@ class MTDNNConfig(PretrainedConfig):
         self.mkd_opt = mkd_opt
         self.weighted_on = weighted_on
         self.uncertainty_based_sampling = uncertainty_based_sampling
+        self.mc_dropout_samples = mc_dropout_samples
         self.kwargs = kwargs
-
