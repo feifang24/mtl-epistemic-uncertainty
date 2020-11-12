@@ -12,6 +12,8 @@ import sys
 from datetime import datetime
 
 import wandb
+from sklearn.utils.class_weight import compute_sample_weight
+from scipy.special import softmax
 
 import numpy as np
 import tensorflow.io.gfile as gfile
@@ -605,6 +607,26 @@ class MTDNNModel(MTDNNPretrainedModel):
             predict = np.argmax(score, axis=1).tolist()
             score = score.reshape(-1).tolist()
         return score, predict, batch_meta["label"], loss
+    
+    def _rerank_batches(self, batches, start_idx, task_weights, softmax=False):
+        def weights_to_probs(weights):
+            if softmax:
+                probs = softmax(weights)
+            else:
+                probs = weights / np.sum(weights)
+            return probs
+
+        task_id_to_weights = {self.tasks[task]: weight for task, weight in task_weights.items()}
+        old_batches, batches_to_rerank = batches[:start_idx], batches[start_idx:]
+
+        num_batches = len(batches_to_rerank)
+        task_ids = [batch_meta["task_id"] for batch_meta, _ in batches_to_rerank]
+        batch_imbalance_weights = compute_sample_weight('balanced', y=task_ids)
+        batch_weights = np.asarray([task_id_to_weights[task_id] for task_id in task_ids]) * batch_imbalance_weights
+        batch_probs = weights_to_probs(batch_weights)
+        reranked_indices = np.random.choice(num_batches, num_batches, replace=False, p=batch_probs)
+        reranked_batches = [batches_to_rerank[i] for i in reranked_indices]
+        return old_batches + reranked_batches
 
     def fit(self, epochs=0):
         """ Fit model to training datasets """
@@ -619,6 +641,8 @@ class MTDNNModel(MTDNNPretrainedModel):
             start = datetime.now()
             # Create batches and train
             batches = list(self.multitask_train_dataloader)
+            if self.config.uncertainty_based_sampling and epoch > 1:
+                batches = self._rerank_batches(batches, start_idx=0, task_weights=uncertainties_by_task)
             for idx in range(len(batches)):
             # for idx, (batch_meta, batch_data) in enumerate(
             #     self.multitask_train_dataloader
@@ -649,6 +673,8 @@ class MTDNNModel(MTDNNPretrainedModel):
                     )
                     val_logs, uncertainties_by_task = self._eval_on_dev(epoch, save_dev_scores=False)
                     self._log_training(val_logs)
+                    if self.config.uncertainty_based_sampling and idx < len(batches) - 1:
+                        batches = self._rerank_batches(batches, start_idx=idx+1, task_weights=uncertainties_by_task)
 
                 if self.config.save_per_updates_on and (
                     (self.local_updates)
@@ -678,7 +704,7 @@ class MTDNNModel(MTDNNPretrainedModel):
         log_dict = {}
         dev_loss_agg = AverageMeter()
         dev_loss_by_task = {}
-        uncertainties_by_task = []
+        uncertainties_by_task = {}
         for idx, dataset in enumerate(self.test_datasets_list):
             logger.info(f"Evaluating on dev ds {idx}: {dataset.upper()}")
             prefix = dataset.split("_")[0]
@@ -700,7 +726,12 @@ class MTDNNModel(MTDNNPretrainedModel):
             # TODO: implement uncertainty
             uncertainty = results['uncertainty']
             log_dict[f'uncertainty_by_task/{dataset}'] = uncertainty
-            uncertainties_by_task.append(uncertainty)
+            if prefix not in uncertainties_by_task:
+                uncertainties_by_task[prefix] = uncertainty
+            else:
+                # exploiting the fact that only mnli has two dev sets
+                uncertainties_by_task[prefix] += uncertainty
+                uncertainties_by_task[prefix] /= 2
         logger.info(f'Dev loss: {dev_loss_agg.avg}')
         log_dict['dev_loss'] = dev_loss_agg.avg
         log_dict.update({f'dev_loss_by_task/{task}': loss 
