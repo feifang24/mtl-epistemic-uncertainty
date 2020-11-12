@@ -643,8 +643,8 @@ class MTDNNModel(MTDNNPretrainedModel):
                         * (len(self.multitask_train_dataloader) - idx - 1)
                     ).split(".")[0]
                     logger.info(
-                        "Updates - [{1:6}] Training Loss - [{2:.5f}] Time Remaining - [{3}]".format(
-                            self.updates, self.train_loss.avg, time_left,
+                        "Updates - [{0:6}] Training Loss - [{1:.5f}] Time Remaining - [{2}]".format(
+                            self.updates, self.train_loss.avg, time_left
                         )
                     )
                     val_logs, uncertainties_by_task = self._eval_on_dev(epoch, save_dev_scores=False)
