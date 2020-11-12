@@ -752,6 +752,9 @@ class MTDNNModel(MTDNNPretrainedModel):
                         "uids": ids,
                         "scores": scores,
                         }
+            # TODO: below is placeholder code for uncertainty; modify after integration
+            results['uncertainty'] = 1.
+
             if save_scores:
                 score_file_prefix = f"{eval_ds_name}_{eval_type}_scores" \
                                     + f'_{saved_epoch_idx}' if saved_epoch_idx is not None else ""  
@@ -760,11 +763,10 @@ class MTDNNModel(MTDNNPretrainedModel):
                 if self.config.use_glue_format:
                     official_score_file = os.path.join(self.output_dir, score_file_prefix + ".tsv")
                     submit(official_score_file, results, label_dict)
-            
-            # TODO: below is placeholder code for uncertainty; delete after integration
-            results['uncertainty'] = 1.
-            
-        return {"avg_loss": eval_ds_avg_loss, "num_samples": eval_ds_num_samples, **results}
+
+            results.update({"avg_loss": eval_ds_avg_loss, "num_samples": eval_ds_num_samples})
+
+        return results
 
 
 
