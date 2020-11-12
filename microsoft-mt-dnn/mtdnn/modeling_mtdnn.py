@@ -715,12 +715,11 @@ class MTDNNModel(MTDNNPretrainedModel):
 
             metrics = results['metrics']
             for key, val in metrics.items():
-                logger.info(
-                        f"Task {dataset} -- Dev {key}: {val:.3f}"
-                    )
+                logger.info(f"Task {dataset} -- Dev {key}: {val:.3f}")
                 log_dict[f'{dataset}/dev_{key}'] = val
             
             uncertainty = results['uncertainty']
+            logger.info(f"Task {dataset} -- Dev uncertainty: {uncertainty:.3f}")
             log_dict[f'uncertainty_by_task/{dataset}'] = uncertainty
             if prefix not in uncertainties_by_task:
                 uncertainties_by_task[prefix] = uncertainty
@@ -779,8 +778,6 @@ class MTDNNModel(MTDNNPretrainedModel):
                         "uids": ids,
                         "scores": scores,
                         }
-            # TODO: below is placeholder code for uncertainty; modify after integration
-            results['uncertainty'] = 1.
 
             if save_scores:
                 score_file_prefix = f"{eval_ds_name}_{eval_type}_scores" \
@@ -790,6 +787,9 @@ class MTDNNModel(MTDNNPretrainedModel):
                 if self.config.use_glue_format:
                     official_score_file = os.path.join(self.output_dir, score_file_prefix + ".tsv")
                     submit(official_score_file, results, label_dict)
+            
+            # TODO: below is placeholder code for uncertainty; modify after integration
+            results['uncertainty'] = 1.
 
             results.update({"avg_loss": eval_ds_avg_loss, "num_samples": eval_ds_num_samples})
 
