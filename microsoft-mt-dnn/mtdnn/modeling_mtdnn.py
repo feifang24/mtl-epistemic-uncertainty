@@ -618,9 +618,12 @@ class MTDNNModel(MTDNNPretrainedModel):
 
             start = datetime.now()
             # Create batches and train
-            for idx, (batch_meta, batch_data) in enumerate(
-                self.multitask_train_dataloader
-            ):
+            batches = list(self.multitask_train_dataloader)
+            for idx in range(len(batches)):
+            # for idx, (batch_meta, batch_data) in enumerate(
+            #     self.multitask_train_dataloader
+            # ):
+                batch_meta, batch_data = batches[idx]
                 batch_meta, batch_data = MTDNNCollater.patch_data(
                     self.config.cuda, batch_meta, batch_data
                 )
@@ -640,10 +643,12 @@ class MTDNNModel(MTDNNPretrainedModel):
                         * (len(self.multitask_train_dataloader) - idx - 1)
                     ).split(".")[0]
                     logger.info(
-                        "Task - [{0:2}] Updates - [{1:6}] Training Loss - [{2:.5f}] Time Remaining - [{3}]".format(
-                            task_id, self.updates, self.train_loss.avg, time_left,
+                        "Updates - [{1:6}] Training Loss - [{2:.5f}] Time Remaining - [{3}]".format(
+                            self.updates, self.train_loss.avg, time_left,
                         )
                     )
+                    val_logs, uncertainties_by_task = self._eval_on_dev(epoch, save_dev_scores=False)
+                    self._log_training(val_logs)
 
                 if self.config.save_per_updates_on and (
                     (self.local_updates)
@@ -662,43 +667,56 @@ class MTDNNModel(MTDNNPretrainedModel):
             # Eval and save checkpoint after each epoch
             logger.info('=' * 5 + f' End of EPOCH {epoch} ' + '=' * 5)
             logger.info(f'Train loss (epoch avg): {self.train_loss.avg}')
-            wandb.log({'train_loss': self.train_loss.avg}, step=epoch)
-            epoch_train_loss_by_task = {task: self.train_loss_by_task[task_idx].avg
-                                        for task, task_idx in self.tasks.items()
-                                        }
-            wandb.log({f'train_loss_by_task/{task}': loss 
-                        for task, loss in epoch_train_loss_by_task.items()}, step=epoch)
-
-            # dev eval
-            dev_loss_agg = AverageMeter()
-            dev_loss_by_task = {}
-            for idx, dataset in enumerate(self.test_datasets_list):
-                logger.info(f"Evaluating on dev ds {idx}: {dataset.upper()}")
-                prefix = dataset.split("_")[0]
-                results = self._predict(idx, prefix, dataset, eval_type='dev', saved_epoch_idx=epoch)
-                
-                avg_loss = results['avg_loss']
-                num_samples = results['num_samples']
-                dev_loss_agg.update(avg_loss, n=num_samples)
-                dev_loss_by_task[dataset] = avg_loss
-                logger.info(f"Task {dataset} -- Dev loss: {avg_loss:.3f}")
-
-                metrics = results['metrics']
-                for key, val in metrics.items():
-                    logger.info(
-                            f"Task {dataset} -- Dev {key}: {val:.3f}"
-                        )
-                    wandb.log({f'{dataset}/dev_{key}': val}, step=epoch)
-            logger.info(f'Dev loss: {dev_loss_agg.avg}')
-            wandb.log({'dev_loss': dev_loss_agg.avg}, step=epoch)
-            wandb.log({f'dev_loss_by_task/{task}': loss 
-                        for task, loss in dev_loss_by_task.items()}, step=epoch)
+            val_logs, uncertainties_by_task = self._eval_on_dev(epoch, save_dev_scores=True)
+            self._log_training(val_logs)
             
             model_file = os.path.join(self.output_dir, "model_{}.pt".format(epoch))
             logger.info(f"Saving mt-dnn model to {model_file}")
             self.save(model_file)
 
-    def _predict(self, eval_ds_idx, eval_ds_prefix, eval_ds_name, eval_type='dev', saved_epoch_idx=None):
+    def _eval_on_dev(self, epoch, save_dev_scores):
+        log_dict = {}
+        dev_loss_agg = AverageMeter()
+        dev_loss_by_task = {}
+        uncertainties_by_task = []
+        for idx, dataset in enumerate(self.test_datasets_list):
+            logger.info(f"Evaluating on dev ds {idx}: {dataset.upper()}")
+            prefix = dataset.split("_")[0]
+            results = self._predict(idx, prefix, dataset, eval_type='dev', saved_epoch_idx=epoch, save_scores=save_dev_scores)
+            
+            avg_loss = results['avg_loss']
+            num_samples = results['num_samples']
+            dev_loss_agg.update(avg_loss, n=num_samples)
+            dev_loss_by_task[dataset] = avg_loss
+            logger.info(f"Task {dataset} -- Dev loss: {avg_loss:.3f}")
+
+            metrics = results['metrics']
+            for key, val in metrics.items():
+                logger.info(
+                        f"Task {dataset} -- Dev {key}: {val:.3f}"
+                    )
+                log_dict[f'{dataset}/dev_{key}'] = val
+            
+            # TODO: implement uncertainty
+            uncertainty = results['uncertainty']
+            log_dict[f'uncertainty_by_task/{dataset}'] = uncertainty
+            uncertainties_by_task.append(uncertainty)
+        logger.info(f'Dev loss: {dev_loss_agg.avg}')
+        log_dict['dev_loss'] = dev_loss_agg.avg
+        log_dict.update({f'dev_loss_by_task/{task}': loss 
+                    for task, loss in dev_loss_by_task.items()})
+        return log_dict, uncertainties_by_task
+
+    def _log_training(self, val_logs):
+        train_loss_by_task = {f'train_loss_by_task/{task}': self.train_loss_by_task[task_idx].avg
+                                for task, task_idx in self.tasks.items()
+                             }
+        train_loss_agg = {'train_loss': self.train_loss.avg}
+        log_dict = {'global_step': self.updates, **train_loss_by_task, **train_loss_agg, **val_logs}
+        wandb.log(log_dict)
+
+
+    def _predict(self, eval_ds_idx, eval_ds_prefix, eval_ds_name, eval_type='dev', saved_epoch_idx=None, save_scores=True):
         if eval_type not in {'dev', 'test'}: 
             raise ValueError("eval_type must be one of the following: 'dev' or 'test'.")
         is_dev = eval_type == 'dev'
@@ -729,19 +747,22 @@ class MTDNNModel(MTDNNPretrainedModel):
                     label_mapper=label_dict,
                     task_type=self.task_defs.task_type_map[eval_ds_prefix],
                 )
-            score_file_prefix = f"{eval_ds_name}_{eval_type}_scores" \
-                                + f'_{saved_epoch_idx}' if saved_epoch_idx is not None else ""  
-            score_file = os.path.join(self.output_dir, score_file_prefix + ".json")
-            results = {
-                "metrics": metrics,
-                "predictions": predictions,
-                "uids": ids,
-                "scores": scores,
-            }
-            MTDNNCommonUtils.dump(score_file, results)
-            if self.config.use_glue_format:
-                official_score_file = os.path.join(self.output_dir, score_file_prefix + ".tsv")
-                submit(official_score_file, results, label_dict)
+            results = {"metrics": metrics,
+                        "predictions": predictions,
+                        "uids": ids,
+                        "scores": scores,
+                        }
+            if save_scores:
+                score_file_prefix = f"{eval_ds_name}_{eval_type}_scores" \
+                                    + f'_{saved_epoch_idx}' if saved_epoch_idx is not None else ""  
+                score_file = os.path.join(self.output_dir, score_file_prefix + ".json")
+                MTDNNCommonUtils.dump(score_file, results)
+                if self.config.use_glue_format:
+                    official_score_file = os.path.join(self.output_dir, score_file_prefix + ".tsv")
+                    submit(official_score_file, results, label_dict)
+            
+            # TODO: below is placeholder code for uncertainty; delete after integration
+            results['uncertainty'] = 1.
             
         return {"avg_loss": eval_ds_avg_loss, "num_samples": eval_ds_num_samples, **results}
 
