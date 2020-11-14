@@ -28,7 +28,7 @@ def train_model(data_dir, uncertainty_based_sampling=False, mc_dropout_samples=1
     ROOT_DIR = 'gs://cs330'
     MODEL_ID = datetime.now().strftime('%m%d%H%M')
     OUTPUT_DIR = os.path.join(ROOT_DIR, 'checkpoint', MODEL_ID)
-    NUM_EPOCHS = 2 if debug else 5
+    NUM_EPOCHS = 2 if debug else 4
     LOG_PER_UPDATES = 4 if debug else 500
 
 

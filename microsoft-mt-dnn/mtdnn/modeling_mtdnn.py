@@ -560,7 +560,7 @@ class MTDNNModel(MTDNNPretrainedModel):
                 weight = batch_data[batch_meta["factor"]]
 
         score = self.mnetwork(*inputs)
-        if self.config.uncertainty_based_sampling:
+        if self.config.mc_dropout_samples > 0:
             def apply_dropout(m):
                 if isinstance(m, DropoutWrapper):
                     m.train()
