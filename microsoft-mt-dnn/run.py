@@ -19,6 +19,7 @@ from mtdnn.tokenizer_mtdnn import MTDNNTokenizer
 
 # Training parameters
 BATCH_SIZE = 16
+EVAL_BATCH_SIZE = 64
 MULTI_GPU_ON = False
 MAX_SEQ_LEN = 128
 
@@ -39,6 +40,7 @@ def train_model(data_dir, uncertainty_based_sampling=False, mc_dropout_samples=1
         }
 
     config = MTDNNConfig(batch_size=BATCH_SIZE,
+                         batch_size_eval=EVAL_BATCH_SIZE,
                          max_seq_len=MAX_SEQ_LEN,
                          multi_gpu_on=MULTI_GPU_ON,
                          log_per_updates=LOG_PER_UPDATES,

@@ -686,7 +686,7 @@ class MTDNNModel(MTDNNPretrainedModel):
                     )
                     val_logs, uncertainties_by_task = self._eval_on_dev(epoch, save_dev_scores=False)
                     self._log_training(val_logs)
-                    if self.config.uncertainty_based_sampling and idx < len(batches) - 1:
+                    if self.local_updates > 1 and self.config.uncertainty_based_sampling and idx < len(batches) - 1:
                         batches = self._rerank_batches(batches, start_idx=idx+1, task_weights=uncertainties_by_task)
 
                 if self.config.save_per_updates_on and (
