@@ -35,6 +35,22 @@ class CeCriterion(Criterion):
         loss = loss * self.alpha
         return loss
 
+class FocalLossCriterion(Criterion):
+    def __init__(self, gamma=0, eps=1e-7):
+        super(FocalLoss, self).__init__()
+        self.gamma = gamma
+        self.eps = eps
+
+    def forward(self, input, target, name='Focal Loss Criterion'):
+        y = one_hot(target, input.size(-1))
+        logit = F.softmax(input, dim=-1)
+        logit = logit.clamp(self.eps, 1. - self.eps)
+
+        loss = -1 * y * torch.log(logit) # cross entropy
+        loss = loss * (1 - logit) ** self.gamma # focal loss
+
+        return loss.sum()
+
 class SeqCeCriterion(CeCriterion):
     def __init__(self, alpha=1.0, name='Seq Cross Entropy Criterion'):
         super().__init__(alpha, name)
@@ -109,10 +125,12 @@ class LossCriterion(IntEnum):
     RankCeCriterion = 2
     SpanCeCriterion = 3
     SeqCeCriterion = 4
+    FocalLossCriterion = 5
 
 LOSS_REGISTRY = {
      LossCriterion.CeCriterion: CeCriterion,
      LossCriterion.MseCriterion: MseCriterion,
+     LossCriterion.FocalLossCriterion: FocalLossCriterion,
      LossCriterion.RankCeCriterion: RankCeCriterion,
      LossCriterion.SpanCeCriterion: SpanCeCriterion,
      LossCriterion.SeqCeCriterion: SeqCeCriterion,

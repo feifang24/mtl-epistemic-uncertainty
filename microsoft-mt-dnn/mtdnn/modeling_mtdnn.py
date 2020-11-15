@@ -569,7 +569,11 @@ class MTDNNModel(MTDNNPretrainedModel):
             self.network.apply(apply_dropout)
             mc_sample_scores = torch.stack([self.mnetwork(*inputs) for _ in range(self.config.mc_dropout_samples)], -1)
             mc_sample_scores = F.softmax(mc_sample_scores, dim=1).data.cpu().numpy()
-            uncertainty = self.batch_bald.get_uncertainties(mc_sample_scores)
+            if self.config.batch_bald:
+                uncertainty = self.batch_bald.get_uncertainties(mc_sample_scores)
+            else:
+                std = mc_sample_scores.std(2)
+                uncertainty = torch.mean(std)
         else:
             uncertainty = 1.0
 
