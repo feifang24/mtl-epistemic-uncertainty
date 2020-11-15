@@ -1,1 +1,1 @@
-python ../run.py --train --data-dir ../../glue_data
+python ../run.py --train --data-dir ../../glue_data --mc-dropout-samples 8
