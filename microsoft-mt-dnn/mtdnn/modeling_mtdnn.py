@@ -398,7 +398,7 @@ class MTDNNModel(MTDNNPretrainedModel):
     def _setup_kd_lossmap(self):
         loss_types = self.config.kd_loss_types
         self.kd_task_loss_criterion = []
-        if config.mkd_opt > 0:
+        if self.config.mkd_opt > 0:
             for idx, cs in enumerate(loss_types):
                 assert cs, "Loss type must be defined."
                 lc = LOSS_REGISTRY[cs](name="Loss func of task {}: {}".format(idx, cs))
