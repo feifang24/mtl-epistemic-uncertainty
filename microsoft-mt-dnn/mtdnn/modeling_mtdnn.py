@@ -177,8 +177,7 @@ class MTDNNModel(MTDNNPretrainedModel):
         self.test_datasets_list = self._configure_test_ds(test_datasets_list)
         self.output_dir = output_dir
 
-        if self.config.uncertainty_based_sampling:
-            self.batch_bald = BatchBALD(num_samples=10, num_draw=500, shuffle_prop=0.0, reverse=True, reduction='mean')
+        self.batch_bald = BatchBALD(num_samples=10, num_draw=500, shuffle_prop=0.0, reverse=True, reduction='mean')
 
         # Create the output_dir if it's doesn't exist
         MTDNNCommonUtils.create_directory_if_not_exists(self.output_dir)
