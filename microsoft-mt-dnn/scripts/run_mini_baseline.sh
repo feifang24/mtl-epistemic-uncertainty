@@ -1,1 +1,0 @@
-python ../run.py --train --data-dir ../../mini_glue_data --mc-dropout-samples 8
