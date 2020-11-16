@@ -651,7 +651,9 @@ class MTDNNModel(MTDNNPretrainedModel):
         for batch_idx, task_id in enumerate(task_id_by_batch):
             batches_by_task[task_id].append(batch_idx)
 
-        
+        # multiply weight by num batches
+        task_id_to_weights = [weight * len(batches_by_task[task_id]) for task_id, weight in enumerate(task_id_to_weights)]    
+            
         num_batches = len(batches[start_idx:])
         # sample num_batches many tasks w/ replacement
         task_probs = weights_to_probs(np.asarray(task_id_to_weights))
