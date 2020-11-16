@@ -127,7 +127,6 @@ class MTDNNModel(MTDNNPretrainedModel):
         test_datasets_list: list = [],
         output_dir: str = "checkpoint",
     ):
-
         # Input validation
         assert (
             config.init_checkpoint in self.supported_init_checkpoints()
@@ -178,7 +177,6 @@ class MTDNNModel(MTDNNPretrainedModel):
         self.output_dir = output_dir
 
         self.batch_bald = BatchBALD(num_samples=10, num_draw=500, shuffle_prop=0.0, reverse=True, reduction='mean')
-
         # Create the output_dir if it's doesn't exist
         MTDNNCommonUtils.create_directory_if_not_exists(self.output_dir)
 
@@ -524,7 +522,7 @@ class MTDNNModel(MTDNNPretrainedModel):
             predictions.extend(pred)
             golds.extend(gold)
             scores.extend(score)
-            uncertainties.extend(uncertainty)
+            uncertainties.append(uncertainty)
             ids.extend(batch_info["uids"])
             eval_loss.update(loss.item(), len(batch_info["uids"]))
 
@@ -562,14 +560,20 @@ class MTDNNModel(MTDNNPretrainedModel):
                 weight = batch_data[batch_meta["factor"]]
 
         score = self.mnetwork(*inputs)
-        if self.config.mc_dropout_samples > 0:
+        if self.config.focal_loss:
+            uncertainty = np.max(F.softmax(score, dim=1).data.cpu(), axis=1)
+        elif self.config.mc_dropout_samples > 0:
             def apply_dropout(m):
                 if isinstance(m, DropoutWrapper):
                     m.train()
             self.network.apply(apply_dropout)
             mc_sample_scores = torch.stack([self.mnetwork(*inputs) for _ in range(self.config.mc_dropout_samples)], -1)
             mc_sample_scores = F.softmax(mc_sample_scores, dim=1).data.cpu().numpy()
-            uncertainty = self.batch_bald.get_uncertainties(mc_sample_scores)
+            if self.config.batch_bald:
+                uncertainty = np.mean(self.batch_bald.get_uncertainties(mc_sample_scores))
+            else:
+                mc_sample_std = np.std(mc_sample_scores, axis=2)
+                uncertainty = np.mean(mc_sample_std)
         else:
             uncertainty = 1.0
 
@@ -623,6 +627,7 @@ class MTDNNModel(MTDNNPretrainedModel):
             score = score.numpy()
             predict = np.argmax(score, axis=1).tolist()
             score = score.reshape(-1).tolist()
+
         return score, predict, batch_meta["label"], loss, uncertainty
 
     def _rerank_batches(self, batches, start_idx, task_weights, softmax=False):
@@ -685,7 +690,7 @@ class MTDNNModel(MTDNNPretrainedModel):
                             self.updates, self.train_loss.avg, time_left
                         )
                     )
-                    val_logs, uncertainties_by_task = self._eval_on_dev(epoch, save_dev_scores=False)
+                    val_logs, uncertainties_by_task = self._eval_on_dev(epoch, save_dev_scores=True)
                     self._log_training(val_logs)
                     if self.local_updates > 1 and self.config.uncertainty_based_sampling and idx < len(batches) - 1:
                         batches = self._rerank_batches(batches, start_idx=idx+1, task_weights=uncertainties_by_task)
@@ -707,7 +712,7 @@ class MTDNNModel(MTDNNPretrainedModel):
             # Eval and save checkpoint after each epoch
             logger.info('=' * 5 + f' End of EPOCH {epoch} ' + '=' * 5)
             logger.info(f'Train loss (epoch avg): {self.train_loss.avg}')
-            val_logs, uncertainties_by_task = self._eval_on_dev(epoch, save_dev_scores=True)
+            val_logs, uncertainties_by_task = self._eval_on_dev(epoch, save_dev_scores=False)
             self._log_training(val_logs)
 
             model_file = os.path.join(self.output_dir, "model_{}.pt".format(epoch))
@@ -795,7 +800,7 @@ class MTDNNModel(MTDNNPretrainedModel):
                         "predictions": predictions,
                         "uids": ids,
                         "scores": scores,
-                        "uncertainty": uncertainty
+                        "uncertainty": uncertainty.item()
                         }
             if save_scores:
                 score_file_prefix = f"{eval_ds_name}_{eval_type}_scores" \

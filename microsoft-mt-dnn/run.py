@@ -23,7 +23,7 @@ EVAL_BATCH_SIZE = 64
 MULTI_GPU_ON = False
 MAX_SEQ_LEN = 128
 
-def train_model(data_dir, uncertainty_based_sampling=False, mc_dropout_samples=100, debug=False):
+def train_model(data_dir, debug=False, uncertainty_based_sampling=False, mc_dropout_samples=100, focal_loss=False, batch_bald=False):
     # Define Configuration, Tasks and Model Objects
     ROOT_DIR = 'gs://cs330'
     MODEL_ID = datetime.now().strftime('%m%d%H%M')
@@ -45,7 +45,9 @@ def train_model(data_dir, uncertainty_based_sampling=False, mc_dropout_samples=1
                          multi_gpu_on=MULTI_GPU_ON,
                          log_per_updates=LOG_PER_UPDATES,
                          uncertainty_based_sampling=uncertainty_based_sampling,
-                         mc_dropout_samples=mc_dropout_samples
+                         mc_dropout_samples=mc_dropout_samples,
+                         batch_bald=batch_bald,
+                         focal_loss=focal_loss
                         )
 
     default_data_process_opts = {"header": True, "is_train": True, "multi_snli": False,}
@@ -57,7 +59,7 @@ def train_model(data_dir, uncertainty_based_sampling=False, mc_dropout_samples=1
                     "encoder_type": "BERT",
                     "enable_san": True,
                     "metric_meta": ["ACC", "F1"],
-                    "loss": "CeCriterion",
+                    "loss": "CeCriterion" if not focal_loss else "FocalLossCriterion",
                     "kd_loss": "MseCriterion",
                     "n_class": 2,
                     "split_names": default_split_names,
@@ -71,7 +73,7 @@ def train_model(data_dir, uncertainty_based_sampling=False, mc_dropout_samples=1
                     "encoder_type": "BERT",
                     "enable_san": False,
                     "metric_meta": ["ACC"],
-                    "loss": "CeCriterion",
+                    "loss": "CeCriterion" if not focal_loss else "FocalLossCriterion",
                     "kd_loss": "MseCriterion",
                     "n_class": 2,
                     "split_names": default_split_names,
@@ -86,7 +88,7 @@ def train_model(data_dir, uncertainty_based_sampling=False, mc_dropout_samples=1
             "enable_san": True,
             "labels": ["contradiction", "neutral", "entailment"],
             "metric_meta": ["ACC"],
-            "loss": "CeCriterion",
+            "loss": "CeCriterion" if not focal_loss else "FocalLossCriterion",
             "kd_loss": "MseCriterion",
             "n_class": 3,
             "split_names": [
@@ -106,7 +108,7 @@ def train_model(data_dir, uncertainty_based_sampling=False, mc_dropout_samples=1
             "encoder_type": "BERT",
             "enable_san": True,
             "metric_meta": ["ACC", "F1"],
-            "loss": "CeCriterion",
+            "loss": "CeCriterion" if not focal_loss else "FocalLossCriterion",
             "kd_loss": "MseCriterion",
             "n_class": 2,
             "split_names": default_split_names,
@@ -157,7 +159,14 @@ if __name__ == "__main__":
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--uncertainty-based-sampling', action='store_true', help='Use uncertainty based batch sampling')
     parser.add_argument('--mc-dropout-samples', default=100, type=int, help='Number of MC Dropout sampling iterations.')
+    parser.add_argument('--focal-loss', action='store_true', help='Use focal loss.')
+    parser.add_argument('--batch-bald', action='store_true', help='Use batch bald uncertainty.')
     args = parser.parse_args()
 
     if args.train:
-        train_model(args.data_dir, uncertainty_based_sampling=args.uncertainty_based_sampling, mc_dropout_samples=args.mc_dropout_samples, debug=args.debug)
+        train_model(args.data_dir,
+                    debug=args.debug,
+                    uncertainty_based_sampling=args.uncertainty_based_sampling,
+                    mc_dropout_samples=args.mc_dropout_samples,
+                    batch_bald=args.batch_bald,
+                    focal_loss=args.focal_loss)
