@@ -594,7 +594,7 @@ class MTDNNModel(MTDNNPretrainedModel):
             mc_sample_scores = F.softmax(mc_sample_scores, dim=1).data.cpu().numpy()
             uncertainty = self.batch_bald.get_uncertainties(mc_sample_scores)
         else:
-            uncertainty = 1.0
+            uncertainty = [1.0]
 
         loss = None
         if self.task_loss_criterion[task_id] and (target is not None):
