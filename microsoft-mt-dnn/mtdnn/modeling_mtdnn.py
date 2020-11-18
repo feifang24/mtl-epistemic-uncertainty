@@ -478,7 +478,8 @@ class MTDNNModel(MTDNNPretrainedModel):
                 first_moment_squared = torch.sum(expected_probs * expected_probs, dim=-1) # bsz
                 second_moment = torch.mean(torch.sum(all_probs * all_probs, dim=-1), dim=1) # bsz
                 variance_per_example = second_moment - first_moment_squared
-                uncertainty = torch.mean(variance_per_example)
+                std_per_example = torch.sqrt(variance_per_example)
+                uncertainty = torch.mean(std_per_example)
                 loss = loss + uncertainty
 
         # compute kd loss

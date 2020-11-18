@@ -19,7 +19,7 @@ from mtdnn.tokenizer_mtdnn import MTDNNTokenizer
 
 # Training parameters
 BATCH_SIZE = 16
-EVAL_BATCH_SIZE = 64
+EVAL_BATCH_SIZE = 128
 MULTI_GPU_ON = False
 MAX_SEQ_LEN = 128
 
