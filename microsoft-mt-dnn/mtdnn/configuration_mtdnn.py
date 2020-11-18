@@ -120,8 +120,9 @@ class MTDNNConfig(PretrainedConfig):
         fp16_opt_level="01",
         mkd_opt=0,
         weighted_on=False,
+        train_mc_dropout_samples=1,
         uncertainty_based_sampling=False,
-        mc_dropout_samples=100,
+        mc_dropout_samples=0,
         **kwargs,
     ):
         # basic Configuration validation
@@ -197,6 +198,7 @@ class MTDNNConfig(PretrainedConfig):
         self.fp16_opt_level = fp16_opt_level
         self.mkd_opt = mkd_opt
         self.weighted_on = weighted_on
+        self.train_mc_dropout_samples = train_mc_dropout_samples
         self.uncertainty_based_sampling = uncertainty_based_sampling
         self.mc_dropout_samples = mc_dropout_samples
         self.kwargs = kwargs

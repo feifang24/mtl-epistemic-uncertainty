@@ -23,7 +23,7 @@ EVAL_BATCH_SIZE = 64
 MULTI_GPU_ON = False
 MAX_SEQ_LEN = 128
 
-def train_model(data_dir, uncertainty_based_sampling=False, mc_dropout_samples=100, debug=False):
+def train_model(data_dir, train_mc_dropout_samples=1, uncertainty_based_sampling=False, mc_dropout_samples=100, debug=False):
     # Define Configuration, Tasks and Model Objects
     ROOT_DIR = 'gs://cs330'
     MODEL_ID = datetime.now().strftime('%m%d%H%M')
@@ -44,6 +44,7 @@ def train_model(data_dir, uncertainty_based_sampling=False, mc_dropout_samples=1
                          max_seq_len=MAX_SEQ_LEN,
                          multi_gpu_on=MULTI_GPU_ON,
                          log_per_updates=LOG_PER_UPDATES,
+                         train_mc_dropout_samples=train_mc_dropout_samples,
                          uncertainty_based_sampling=uncertainty_based_sampling,
                          mc_dropout_samples=mc_dropout_samples
                         )
@@ -138,8 +139,6 @@ def train_model(data_dir, uncertainty_based_sampling=False, mc_dropout_samples=1
         config=config, task_defs=task_defs, vectorized_data=vectorized_data
     )
 
-    multitask_train_dataloader = data_processor.get_train_dataloader()
-
     model = MTDNNModel(
         config,
         task_defs,
@@ -155,9 +154,14 @@ if __name__ == "__main__":
     parser.add_argument('--data-dir', type=str, help='Data directory')
     parser.add_argument('--train', action='store_true', help='Train model')
     parser.add_argument('--debug', action='store_true')
+    parser.add_argument('--train-mc-dropout-samples', default=1, type=int, help='Number of MC Dropout sampling iterations in training.')
     parser.add_argument('--uncertainty-based-sampling', action='store_true', help='Use uncertainty based batch sampling')
-    parser.add_argument('--mc-dropout-samples', default=100, type=int, help='Number of MC Dropout sampling iterations.')
+    parser.add_argument('--mc-dropout-samples', default=0, type=int, help='Number of MC Dropout sampling iterations in val.')
     args = parser.parse_args()
 
     if args.train:
-        train_model(args.data_dir, uncertainty_based_sampling=args.uncertainty_based_sampling, mc_dropout_samples=args.mc_dropout_samples, debug=args.debug)
+        train_model(args.data_dir, 
+                    train_mc_dropout_samples=args.train_mc_dropout_samples,
+                    uncertainty_based_sampling=args.uncertainty_based_sampling, 
+                    mc_dropout_samples=args.mc_dropout_samples, 
+                    debug=args.debug)

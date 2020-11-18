@@ -456,12 +456,29 @@ class MTDNNModel(MTDNNPretrainedModel):
                 weight = batch_data[batch_meta["factor"]]
         logits = self.mnetwork(*inputs)
 
+        use_uncertainty_based_reg = (self.config.train_mc_dropout_samples > 1)
+        if use_uncertainty_based_reg:
+            all_logits = [logits] + [self.mnetwork(*inputs) for _ in range(self.config.train_mc_dropout_samples - 1)]
+
         # compute loss
         loss = 0
         if self.task_loss_criterion[task_id] and (target is not None):
-            loss = self.task_loss_criterion[task_id](
-                logits, target, weight, ignore_index=-1
-            )
+            if not use_uncertainty_based_reg:
+                loss = self.task_loss_criterion[task_id](
+                    logits, target, weight, ignore_index=-1
+                )
+            else:
+                loss = self.task_loss_criterion[task_id](torch.cat(all_logits, dim=0), 
+                                                        torch.cat([target for _ in range(self.config.train_mc_dropout_samples)], dim=0),
+                                                        weight, 
+                                                        ignore_index=-1)
+                # calculate variance of probabilities as uncertainty
+                all_probs = F.softmax(torch.stack(all_logits, dim=1), dim=-1) # bsz, num_samples, hidden_dim
+                expected_probs = torch.mean(all_probs, dim=1) # bsz, hidden_dim
+                first_moment_squared = torch.sum(expected_probs * expected_probs, dim=-1) # bsz
+                second_moment = torch.mean(torch.sum(all_probs * all_probs, dim=-1), dim=1) # bsz
+                variance = second_moment - first_moment_squared
+                loss = loss + variance
 
         # compute kd loss
         if self.config.mkd_opt > 0 and ("soft_label" in batch_meta):
