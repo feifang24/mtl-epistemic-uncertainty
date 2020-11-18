@@ -16,6 +16,7 @@ from sklearn.utils.class_weight import compute_sample_weight
 from scipy.special import softmax
 
 import numpy as np
+import random
 import tensorflow.io.gfile as gfile
 import torch
 import torch.nn.functional as F
@@ -262,6 +263,10 @@ class MTDNNModel(MTDNNPretrainedModel):
         self.para_swapped = False
         self.optimizer.zero_grad()
         self._setup_lossmap()
+
+    @property
+    def num_tasks(self):
+        return len(self.tasks)
 
     def _configure_test_ds(self, test_datasets_list):
         if test_datasets_list: return test_datasets_list
@@ -630,25 +635,44 @@ class MTDNNModel(MTDNNPretrainedModel):
 
         return score, predict, batch_meta["label"], loss, uncertainty
 
-    def _rerank_batches(self, batches, start_idx, task_weights, softmax=False):
+    def _rerank_batches(self, batches, start_idx, task_weights, softmax_task_weights=False):
         def weights_to_probs(weights):
-            if softmax:
+            if softmax_task_weights:
                 probs = softmax(weights)
             else:
                 probs = weights / np.sum(weights)
             return probs
 
-        task_id_to_weights = {self.tasks[task]: weight for task, weight in task_weights.items()}
-        old_batches, batches_to_rerank = batches[:start_idx], batches[start_idx:]
+        # convert task_weights from dict to list, where list[i] = weight of task_id i
+        task_id_to_weights = [None] * self.num_tasks
+        for task_name, weight in task_weights.items():
+            task_id = self.tasks[task_name]
+            task_id_to_weights[task_id] = weight
 
-        num_batches = len(batches_to_rerank)
-        task_ids = [batch_meta["task_id"] for batch_meta, _ in batches_to_rerank]
-        batch_imbalance_weights = compute_sample_weight('balanced', y=task_ids)
-        batch_weights = np.asarray([task_id_to_weights[task_id] for task_id in task_ids]) * batch_imbalance_weights
-        batch_probs = weights_to_probs(batch_weights)
-        reranked_indices = np.random.choice(num_batches, num_batches, replace=False, p=batch_probs)
-        reranked_batches = [batches_to_rerank[i] for i in reranked_indices]
-        return old_batches + reranked_batches
+        # reshuffle all batches; sort them by task_id
+        new_batches = list(self.multitask_train_dataloader)
+        random.shuffle(new_batches)
+        task_id_by_batch = [batch_meta["task_id"] for batch_meta, _ in new_batches]
+        batches_by_task = [[] for _ in range(self.num_tasks)]
+        for batch_idx, task_id in enumerate(task_id_by_batch):
+            batches_by_task[task_id].append(batch_idx)
+
+        # multiply weight by num batches
+        task_id_to_weights = [weight * len(batches_by_task[task_id]) for task_id, weight in enumerate(task_id_to_weights)]    
+            
+        num_batches = len(batches[start_idx:])
+        # sample num_batches many tasks w/ replacement
+        task_probs = weights_to_probs(np.asarray(task_id_to_weights))
+        task_indices_sampled = np.random.choice(self.num_tasks, num_batches, replace=True, p=task_probs)
+
+        reranked_batches = [None] * num_batches
+        counters = [0] * self.num_tasks
+        for i, task_id in enumerate(task_indices_sampled):
+            batch_idx = batches_by_task[task_id][counters[task_id] % len(batches_by_task[task_id])]
+            counters[task_id] += 1
+            reranked_batches[i] = new_batches[batch_idx]
+
+        return [None] * start_idx + reranked_batches
 
     def fit(self, epochs=0):
         """ Fit model to training datasets """
