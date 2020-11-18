@@ -477,8 +477,9 @@ class MTDNNModel(MTDNNPretrainedModel):
                 expected_probs = torch.mean(all_probs, dim=1) # bsz, hidden_dim
                 first_moment_squared = torch.sum(expected_probs * expected_probs, dim=-1) # bsz
                 second_moment = torch.mean(torch.sum(all_probs * all_probs, dim=-1), dim=1) # bsz
-                variance = second_moment - first_moment_squared
-                loss = loss + variance
+                variance_per_example = second_moment - first_moment_squared
+                uncertainty = torch.mean(variance_per_example)
+                loss = loss + uncertainty
 
         # compute kd loss
         if self.config.mkd_opt > 0 and ("soft_label" in batch_meta):
