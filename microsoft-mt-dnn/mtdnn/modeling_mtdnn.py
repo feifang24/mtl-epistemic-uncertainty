@@ -641,26 +641,27 @@ class MTDNNModel(MTDNNPretrainedModel):
                 probs = weights / np.sum(weights)
             return probs
 
+        # reshuffle all batches; sort them by task_id
+        new_batches = [b for _ in range(5) for b in self.multitask_train_dataloader] #list(self.multitask_train_dataloader)
+        task_id_by_batch = [batch_meta["task_id"] for batch_meta, _ in new_batches]
+        batches_by_task = [[] for _ in range(self.num_tasks)]
+        for batch_idx, task_id in enumerate(task_id_by_batch):
+            batches_by_task[task_id].append(batch_idx)
+
         # convert task_weights from dict to list, where list[i] = weight of task_id i
         task_id_to_weights = [None] * self.num_tasks
         for task_name, weight in task_weights.items():
             task_id = self.tasks[task_name]
             task_id_to_weights[task_id] = weight
 
-        # reshuffle all batches; sort them by task_id
-        new_batches = list(self.multitask_train_dataloader)
-        random.shuffle(new_batches)
-        task_id_by_batch = [batch_meta["task_id"] for batch_meta, _ in new_batches]
-        batches_by_task = [[] for _ in range(self.num_tasks)]
-        for batch_idx, task_id in enumerate(task_id_by_batch):
-            batches_by_task[task_id].append(batch_idx)
-
         # multiply weight by num batches
-        task_id_to_weights = [weight * len(batches_by_task[task_id]) for task_id, weight in enumerate(task_id_to_weights)]    
+        #task_id_to_weights = [weight * len(batches_by_task[task_id]) for task_id, weight in enumerate(task_id_to_weights)]    
 
         task_id_to_weights = np.asarray(task_id_to_weights)
             
         if self.config.uncertainty_based_weight:
+            # rel_loss_weights = (1. / task_id_to_weights)
+            # self.loss_weights = self.num_tasks * rel_loss_weights / np.sum(rel_loss_weights)
             mean_weight = np.mean(task_id_to_weights)
             self.loss_weights = mean_weight / task_id_to_weights
 
@@ -781,6 +782,12 @@ class MTDNNModel(MTDNNPretrainedModel):
         log_dict['dev_loss'] = dev_loss_agg.avg
         log_dict.update({f'dev_loss_by_task/{task}': loss
                     for task, loss in dev_loss_by_task.items()})
+
+        self.dev_loss_by_task = [None] * self.num_tasks
+        for task_name, loss in dev_loss_by_task.items():
+            self.dev_loss_by_task[self.tasks[task_name]] = loss
+        self.dev_loss_by_task = np.asarray(self.dev_loss_by_task)
+
         return log_dict, uncertainties_by_task
 
     def _log_training(self, val_logs):
