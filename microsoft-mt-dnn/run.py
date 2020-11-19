@@ -165,5 +165,5 @@ if __name__ == "__main__":
         train_model(args.data_dir, 
                     uncertainty_based_sampling=args.uncertainty_based_sampling, 
                     mc_dropout_samples=args.mc_dropout_samples, 
-                    uncertainty_based_weight=uncertainty_based_weight,
+                    uncertainty_based_weight=args.uncertainty_based_weight,
                     debug=args.debug)
