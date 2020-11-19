@@ -179,6 +179,7 @@ class MTDNNModel(MTDNNPretrainedModel):
         self.output_dir = output_dir
 
         self.batch_bald = BatchBALD(num_samples=10, num_draw=500, shuffle_prop=0.0, reverse=True, reduction='mean')
+        self.loss_weights = [None] * self.num_tasks
 
         # Create the output_dir if it's doesn't exist
         MTDNNCommonUtils.create_directory_if_not_exists(self.output_dir)
@@ -454,6 +455,8 @@ class MTDNNModel(MTDNNPretrainedModel):
                 )
             else:
                 weight = batch_data[batch_meta["factor"]]
+        if self.config.uncertainty_based_weight:
+            weight = self.loss_weights[task_id]
         logits = self.mnetwork(*inputs)
 
         # compute loss
@@ -654,10 +657,16 @@ class MTDNNModel(MTDNNPretrainedModel):
 
         # multiply weight by num batches
         task_id_to_weights = [weight * len(batches_by_task[task_id]) for task_id, weight in enumerate(task_id_to_weights)]    
+
+        task_id_to_weights = np.asarray(task_id_to_weights)
             
+        if self.config.uncertainty_based_weight:
+            mean_weight = np.mean(task_id_to_weights)
+            self.loss_weights = mean_weight / task_id_to_weights
+
         num_batches = len(batches[start_idx:])
         # sample num_batches many tasks w/ replacement
-        task_probs = weights_to_probs(np.asarray(task_id_to_weights))
+        task_probs = weights_to_probs(task_id_to_weights)
         task_indices_sampled = np.random.choice(self.num_tasks, num_batches, replace=True, p=task_probs)
 
         reranked_batches = [None] * num_batches
