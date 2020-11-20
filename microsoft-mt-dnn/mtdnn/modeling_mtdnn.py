@@ -798,7 +798,11 @@ class MTDNNModel(MTDNNPretrainedModel):
                                 for task, task_idx in self.tasks.items()
                              }
         train_loss_agg = {'train_loss': self.train_loss.avg}
-        log_dict = {'global_step': self.updates, **train_loss_by_task, **train_loss_agg, **val_logs}
+        loss_weights_by_task = {} 
+        if self.config.uncertainty_based_weight:
+            for task_name, task_id in self.tasks.items():
+                loss_weights_by_task[f'loss_weight/{task_name}'] = self.loss_weights[task_id]
+        log_dict = {'global_step': self.updates, **train_loss_by_task, **train_loss_agg, **val_logs, **loss_weights_by_task}
         wandb.log(log_dict)
 
 
