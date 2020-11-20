@@ -801,7 +801,7 @@ class MTDNNModel(MTDNNPretrainedModel):
         loss_weights_by_task = {} 
         if self.config.uncertainty_based_weight:
             for task_name, task_id in self.tasks.items():
-                loss_weights_by_task[f'loss_weight/{task_name}'] = self.loss_weights[task_id]
+                loss_weights_by_task[f'loss_weight/{task_name}'] = self.loss_weights[task_id] if self.loss_weights[task_id] is not None else 1.
         log_dict = {'global_step': self.updates, **train_loss_by_task, **train_loss_agg, **val_logs, **loss_weights_by_task}
         wandb.log(log_dict)
 
