@@ -645,15 +645,17 @@ class MTDNNModel(MTDNNPretrainedModel):
             task_id_to_weights[task_id] = weight
 
         # reshuffle all batches; sort them by task_id
-        new_batches = list(self.multitask_train_dataloader)
-        random.shuffle(new_batches) # this line somehow helps?
+        new_batches = [list(self.multitask_train_dataloader) for _ in range(5)]
+        for i in range(len(new_batches)):    
+            random.shuffle(new_batches[i]) # this line somehow helps?
+        new_batches = [b for batches in new_batches for b in batches] # flatten
         task_id_by_batch = [batch_meta["task_id"] for batch_meta, _ in new_batches]
         batches_by_task = [[] for _ in range(self.num_tasks)]
         for batch_idx, task_id in enumerate(task_id_by_batch):
             batches_by_task[task_id].append(batch_idx)
 
         # multiply weight by num batches
-        task_id_to_weights = [weight * len(batches_by_task[task_id]) for task_id, weight in enumerate(task_id_to_weights)]    
+        # task_id_to_weights = [weight * len(batches_by_task[task_id]) for task_id, weight in enumerate(task_id_to_weights)]    
             
         num_batches = len(batches[start_idx:])
         # sample num_batches many tasks w/ replacement
