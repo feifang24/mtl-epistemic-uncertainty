@@ -642,7 +642,10 @@ class MTDNNModel(MTDNNPretrainedModel):
             return probs
 
         # reshuffle all batches; sort them by task_id
-        new_batches = [b for _ in range(5) for b in self.multitask_train_dataloader] #list(self.multitask_train_dataloader)
+        new_batches = [list(self.multitask_train_dataloader) for _ in range(5)]
+        for i in range(len(new_batches)):    
+            random.shuffle(new_batches[i]) # this line somehow helps?
+        new_batches = [b for batches in new_batches for b in batches] # flatten
         task_id_by_batch = [batch_meta["task_id"] for batch_meta, _ in new_batches]
         batches_by_task = [[] for _ in range(self.num_tasks)]
         for batch_idx, task_id in enumerate(task_id_by_batch):
