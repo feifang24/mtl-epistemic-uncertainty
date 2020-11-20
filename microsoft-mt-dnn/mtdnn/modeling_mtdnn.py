@@ -661,16 +661,16 @@ class MTDNNModel(MTDNNPretrainedModel):
         #task_id_to_weights = [weight * len(batches_by_task[task_id]) for task_id, weight in enumerate(task_id_to_weights)]    
 
         task_id_to_weights = np.asarray(task_id_to_weights)
-            
+        task_probs = weights_to_probs(task_id_to_weights)
+
         if self.config.uncertainty_based_weight:
             # rel_loss_weights = (1. / task_id_to_weights)
             # self.loss_weights = self.num_tasks * rel_loss_weights / np.sum(rel_loss_weights)
-            mean_weight = np.mean(task_id_to_weights)
-            self.loss_weights = mean_weight / task_id_to_weights
+            mean_weight = np.mean(task_probs)
+            self.loss_weights = mean_weight / task_probs
 
         num_batches = len(batches[start_idx:])
         # sample num_batches many tasks w/ replacement
-        task_probs = weights_to_probs(task_id_to_weights)
         task_indices_sampled = np.random.choice(self.num_tasks, num_batches, replace=True, p=task_probs)
 
         reranked_batches = [None] * num_batches
