@@ -478,7 +478,7 @@ class MTDNNModel(MTDNNPretrainedModel):
             )
             loss = loss + kd_loss
 
-        self.train_loss_by_task[task_id].update(loss.item(), batch_data[batch_meta["token_id"]].size(0))
+        self.train_loss_by_task[task_id].update(loss.item() / (self.loss_weights[task_id] if self.loss_weights[task_id] is not None else 1.), batch_data[batch_meta["token_id"]].size(0))
         self.train_loss.update(loss.item(), batch_data[batch_meta["token_id"]].size(0))
         # scale loss
         loss = loss / (self.config.grad_accumulation_step or 1)
