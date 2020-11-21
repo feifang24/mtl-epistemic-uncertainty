@@ -447,7 +447,7 @@ class MTDNNModel(MTDNNPretrainedModel):
             inputs.append(None)
             inputs.append(None)
         inputs.append(task_id)
-        weight = None
+        weight = self.loss_weights[task_id]
         if self.config.weighted_on:
             if self.config.cuda:
                 weight = batch_data[batch_meta["factor"]].cuda(
@@ -455,8 +455,6 @@ class MTDNNModel(MTDNNPretrainedModel):
                 )
             else:
                 weight = batch_data[batch_meta["factor"]]
-        if self.config.uncertainty_based_weight:
-            weight = self.loss_weights[task_id]
         logits = self.mnetwork(*inputs)
 
         # compute loss
@@ -726,10 +724,14 @@ class MTDNNModel(MTDNNPretrainedModel):
                     val_logs, uncertainties_by_task = self._eval_on_dev(epoch, save_dev_scores=False)
                     self._log_training(val_logs)
                     if self.local_updates == FIRST_STEP_TO_LOG:
-                        self.initial_train_loss_by_task = self.train_loss_by_task
+                        self.initial_train_loss_by_task = np.asarray([loss.avg for loss in self.train_loss_by_task])
                     else:
                         if self.config.uncertainty_based_sampling and idx < len(batches) - 1:
                             batches = self._rerank_batches(batches, start_idx=idx+1, task_weights=uncertainties_by_task)
+                    if self.config.rate_based_weight:
+                        current_train_loss_by_task = np.asarray([loss.avg for loss in self.train_loss_by_task])
+                        rate_of_training_by_task = current_train_loss_by_task / self.initial_train_loss_by_task
+                        self.loss_weights = rate_of_training_by_task / np.mean(rate_of_training_by_task)
 
                 if self.config.save_per_updates_on and (
                     (self.local_updates)
