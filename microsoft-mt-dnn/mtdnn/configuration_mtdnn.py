@@ -13,7 +13,7 @@ from mtdnn.common.archive_maps import PRETRAINED_CONFIG_ARCHIVE_MAP
 
 """MTDNN model configuration"""
 
-encoder_checkpoint_map = {1: "bert", 2: "roberta"}
+encoder_checkpoint_map = {1: "bert", 2: "roberta", 5:'lstm'}
 
 
 class MTDNNConfig(PretrainedConfig):

@@ -215,7 +215,7 @@ class MTDNNModel(MTDNNPretrainedModel):
                 self.bert_model = BertModel.from_pretrained(self.config.init_checkpoint)
                 self.state_dict = self.bert_model.state_dict()
                 self.config.hidden_size = self.bert_config.hidden_size
-            if config.encoder_type == EncoderModelType.ROBERTA:
+            elif config.encoder_type == EncoderModelType.ROBERTA:
                 # Download and extract from PyTorch hub if not downloaded before
                 self.bert_model = torch.hub.load(
                     "pytorch/fairseq", config.init_checkpoint
@@ -673,6 +673,8 @@ class MTDNNModel(MTDNNPretrainedModel):
             self.loss_weights = rel_loss_weights * self.num_tasks / np.sum(rel_loss_weights)
             # self.loss_weights = rel_loss_weights * np.mean(task_id_to_weights)
 
+        # multiply weight by num batches
+        task_id_to_weights = [weight * len(batches_by_task[task_id]) for task_id, weight in enumerate(task_id_to_weights)]
         num_batches = len(batches[start_idx:])
         # sample num_batches many tasks w/ replacement
         task_indices_sampled = np.random.choice(self.num_tasks, num_batches, replace=True, p=task_probs)

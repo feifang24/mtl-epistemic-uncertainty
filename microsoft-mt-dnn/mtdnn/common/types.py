@@ -27,6 +27,7 @@ class EncoderModelType(IntEnum):
     ROBERTA = 2
     XLNET = 3
     SAN = 4
+    LSTM = 5
 
 
 class TaskDefType(dict):

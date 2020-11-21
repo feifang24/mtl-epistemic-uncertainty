@@ -138,6 +138,37 @@ class SANClassifier(nn.Module):
             return scores
 
 
+class Highway(nn.Module):
+
+    def __init__(self, input_size):
+        super(Highway, self).__init__()
+        self.proj = nn.Linear(input_size, input_size)
+        self.transform = nn.Linear(input_size, input_size)
+        self.transform.bias.data.fill_(-2.0)
+
+    def forward(self, input):
+        proj_result = torch.relu(self.proj(input))
+        proj_gate = torch.sigmoid(self.transform(input))
+        gated = (proj_gate * proj_result) + ((1 - proj_gate) * input)
+        return gated
+
+
+class TimeDistributed(nn.Module):
+    def __init__(self, module):
+        super(TimeDistributed, self).__init__()
+        self.module = module
+
+    def forward(self, x):
+        if len(x.size()) <= 2:
+            return self.module(x)
+        # Squash samples and timesteps into a single axis
+        x_reshape = x.contiguous().view(-1, x.size(-1))  # (samples * timesteps, input_size)
+        y = self.module(x_reshape)
+        # We have to reshape Y
+        y = y.contiguous().view(x.size(0), -1, y.size(-1))  # (samples, timesteps, output_size)
+        return y
+
+
 class SANBERTNetwork(nn.Module):
     """Implementation of Stochastic Answer Networks for Natural Language Inference, Xiaodong Liu, Kevin Duh and Jianfeng Gao
     https://arxiv.org/abs/1804.07888
@@ -218,12 +249,23 @@ class SANBERTNetwork(nn.Module):
             sequence_output = self.bert.extract_features(input_ids)
             pooled_output = self.pooler(sequence_output)
         else:
-            all_encoder_layers, pooled_output = self.bert(
-                input_ids=input_ids,
-                token_type_ids=token_type_ids,
-                attention_mask=attention_mask,
-            )
-            sequence_output = all_encoder_layers[-1]
+            if self.config.bilstm:
+                embeddings = self.bert.embeddings(input_ids=input_ids, token_type_ids=token_type_ids)
+                highway = TimeDistributed(Highway(embeddings.shape[-1]))
+                highway.to(self.config.cuda_device)
+                embeddings = highway(embeddings)
+                lstm = nn.LSTM(input_size=embeddings.shape[-1], hidden_size=self.config.hidden_size, batch_first=True, bidirectional=True)
+                lstm.to(self.config.cuda_device)
+                sequence_output, hidden = lstm(embeddings)
+                sequence_output = sequence_output[:,:, :self.config.hidden_size]  # get forward output -- not sure how it's implemented in allennlp
+                pooled_output = self.bert.pooler(sequence_output)
+            else:
+                all_encoder_layers, pooled_output = self.bert(
+                    input_ids=input_ids,
+                    token_type_ids=token_type_ids,
+                    attention_mask=attention_mask,
+                )
+                sequence_output = all_encoder_layers[-1]
 
         decoder_opt = self.decoder_opts[task_id]
         task_type = self.task_types[task_id]
