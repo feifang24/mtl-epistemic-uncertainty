@@ -660,7 +660,7 @@ class MTDNNModel(MTDNNPretrainedModel):
         task_probs = weights_to_probs(task_id_to_weights)
 
         # multiply weight by num batches per task
-        task_probs = weights_to_probs(task_id_to_weights * np.asarray([len(batches) for batches in batches_by_task]))  # comment out as see fit
+        # task_probs = weights_to_probs(task_id_to_weights * np.asarray([len(batches) for batches in batches_by_task]))  # comment out as see fit
 
         if self.config.uncertainty_based_weight:
             rel_loss_weights = (1. / task_id_to_weights)
@@ -684,7 +684,7 @@ class MTDNNModel(MTDNNPretrainedModel):
         """ Fit model to training datasets """
         epochs = epochs or self.config.epochs
         logger.info(f"Total number of params: {self.total_param}")
-        FIRST_STEP_TO_LOG = 1
+        FIRST_STEP_TO_LOG = 100
         for epoch in range(1, epochs + 1):
             logger.info(f"At epoch {epoch}")
             logger.info(
@@ -722,7 +722,6 @@ class MTDNNModel(MTDNNPretrainedModel):
                         )
                     )
                     val_logs, uncertainties_by_task = self._eval_on_dev(epoch, save_dev_scores=False)
-                    self._log_training(val_logs)
                     if self.local_updates == FIRST_STEP_TO_LOG:
                         self.initial_train_loss_by_task = np.asarray([loss.avg for loss in self.train_loss_by_task])
                     else:
@@ -732,7 +731,8 @@ class MTDNNModel(MTDNNPretrainedModel):
                         current_train_loss_by_task = np.asarray([loss.avg for loss in self.train_loss_by_task])
                         rate_of_training_by_task = current_train_loss_by_task / self.initial_train_loss_by_task
                         self.loss_weights = rate_of_training_by_task / np.mean(rate_of_training_by_task)
-
+                    self._log_training(val_logs)
+                    
                 if self.config.save_per_updates_on and (
                     (self.local_updates)
                     % (
