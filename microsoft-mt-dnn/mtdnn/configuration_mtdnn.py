@@ -123,6 +123,7 @@ class MTDNNConfig(PretrainedConfig):
         uncertainty_based_sampling=False,
         mc_dropout_samples=100,
         uncertainty_based_weight=False,
+        rate_based_weight=False,
         **kwargs,
     ):
         # basic Configuration validation
@@ -201,4 +202,5 @@ class MTDNNConfig(PretrainedConfig):
         self.uncertainty_based_sampling = uncertainty_based_sampling
         self.mc_dropout_samples = mc_dropout_samples
         self.uncertainty_based_weight = uncertainty_based_weight
+        self.rate_based_weight = rate_based_weight
         self.kwargs = kwargs
