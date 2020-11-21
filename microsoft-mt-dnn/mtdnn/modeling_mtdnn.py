@@ -686,6 +686,7 @@ class MTDNNModel(MTDNNPretrainedModel):
         """ Fit model to training datasets """
         epochs = epochs or self.config.epochs
         logger.info(f"Total number of params: {self.total_param}")
+        FIRST_STEP_TO_LOG = 1
         for epoch in range(1, epochs + 1):
             logger.info(f"At epoch {epoch}")
             logger.info(
@@ -706,7 +707,7 @@ class MTDNNModel(MTDNNPretrainedModel):
                 task_id = batch_meta["task_id"]
                 self.update(batch_meta, batch_data)
                 if (
-                    self.local_updates == 1
+                    self.local_updates == FIRST_STEP_TO_LOG
                     or (self.local_updates)
                     % (self.config.log_per_updates * self.config.grad_accumulation_step)
                     == 0
