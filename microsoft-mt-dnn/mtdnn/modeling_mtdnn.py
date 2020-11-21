@@ -657,17 +657,17 @@ class MTDNNModel(MTDNNPretrainedModel):
             task_id = self.tasks[task_name]
             task_id_to_weights[task_id] = weight
 
-        # multiply weight by num batches
-        #task_id_to_weights = [weight * len(batches_by_task[task_id]) for task_id, weight in enumerate(task_id_to_weights)]    
+        task_id_to_weights = np.asarray(task_id_to_weights) # raw uncertainty estimates
 
-        task_id_to_weights = np.asarray(task_id_to_weights)
         task_probs = weights_to_probs(task_id_to_weights)
 
+        # multiply weight by num batches per task
+        task_probs = weights_to_probs(task_id_to_weights * np.asarray([len(batches) for batches in batches_by_task]))  # comment out as see fit
+
         if self.config.uncertainty_based_weight:
-            # rel_loss_weights = (1. / task_id_to_weights)
-            # self.loss_weights = self.num_tasks * rel_loss_weights / np.sum(rel_loss_weights)
-            mean_weight = np.mean(task_probs)
-            self.loss_weights = mean_weight / task_probs
+            rel_loss_weights = (1. / task_id_to_weights)
+            # self.loss_weights = rel_loss_weights * self.num_tasks / np.sum(rel_loss_weights)
+            self.loss_weights = rel_loss_weights * np.mean(task_id_to_weights)
 
         num_batches = len(batches[start_idx:])
         # sample num_batches many tasks w/ replacement
