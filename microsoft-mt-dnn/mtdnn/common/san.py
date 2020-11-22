@@ -187,6 +187,10 @@ class SANBERTNetwork(nn.Module):
         self.dropout_list = nn.ModuleList()
         self.encoder_type = config.encoder_type
         self.hidden_size = self.config.hidden_size
+        self.highway = TimeDistributed(Highway(self.hidden_size))
+        self.highway.to(self.config.cuda_device)
+        self.lstm = nn.LSTM(input_size=self.hidden_size, hidden_size=self.hidden_size, batch_first=True, bidirectional=True)
+        self.lstm.to(self.config.cuda_device)
 
         # Dump other features if value is set to true
         if config.dump_feature:
@@ -251,12 +255,8 @@ class SANBERTNetwork(nn.Module):
         else:
             if self.config.bilstm:
                 embeddings = self.bert.embeddings(input_ids=input_ids, token_type_ids=token_type_ids)
-                highway = TimeDistributed(Highway(embeddings.shape[-1]))
-                highway.to(self.config.cuda_device)
-                embeddings = highway(embeddings)
-                lstm = nn.LSTM(input_size=embeddings.shape[-1], hidden_size=self.config.hidden_size, batch_first=True, bidirectional=True)
-                lstm.to(self.config.cuda_device)
-                sequence_output, hidden = lstm(embeddings)
+                embeddings = self.highway(embeddings)
+                sequence_output, hidden = self.lstm(embeddings)
                 sequence_output = sequence_output[:,:, :self.config.hidden_size]  # get forward output -- not sure how it's implemented in allennlp
                 pooled_output = self.bert.pooler(sequence_output)
             else:

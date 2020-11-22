@@ -23,12 +23,12 @@ EVAL_BATCH_SIZE = 128
 MULTI_GPU_ON = False
 MAX_SEQ_LEN = 128
 
-def train_model(data_dir, uncertainty_based_sampling=False, mc_dropout_samples=100, uncertainty_based_weight=False, rate_based_weight=False, focal_loss=False, bilstm=False, debug=False):
+def train_model(data_dir, uncertainty_based_sampling=False, mc_dropout_samples=100, uncertainty_based_weight=False, rate_based_weight=False, focal_loss=False, batch_bald=False, bilstm=False, debug=False):
     # Define Configuration, Tasks and Model Objects
     ROOT_DIR = 'gs://cs330'
     MODEL_ID = datetime.now().strftime('%m%d%H%M')
     OUTPUT_DIR = os.path.join(ROOT_DIR, 'checkpoint', MODEL_ID)
-    NUM_EPOCHS = 2 if debug else 4
+    NUM_EPOCHS = 2 if debug else 10
     LOG_PER_UPDATES = 4 if debug else 200
 
 
@@ -48,7 +48,8 @@ def train_model(data_dir, uncertainty_based_sampling=False, mc_dropout_samples=1
                          uncertainty_based_weight=uncertainty_based_weight,
                          rate_based_weight=rate_based_weight,
                          focal_loss=focal_loss,
-                         bilstm=bilstm
+                         bilstm=bilstm,
+                         learning_rate=1e-2
                         )
 
     default_data_process_opts = {"header": True, "is_train": True, "multi_snli": False,}
@@ -61,7 +62,6 @@ def train_model(data_dir, uncertainty_based_sampling=False, mc_dropout_samples=1
                     "enable_san": True,
                     "metric_meta": ["ACC", "F1", "AUC"],
                     "loss": "CeCriterion" if not focal_loss else "FocalLossCriterion",
-                    "metric_meta": ["ACC", "F1", "AUC"],
                     "loss": "CeCriterion",
                     "kd_loss": "MseCriterion",
                     "n_class": 2,
@@ -75,7 +75,6 @@ def train_model(data_dir, uncertainty_based_sampling=False, mc_dropout_samples=1
                     "data_format": "PremiseOnly",
                     "encoder_type": "BERT",
                     "enable_san": False,
-                    "metric_meta": ["ACC"],
                     "loss": "CeCriterion" if not focal_loss else "FocalLossCriterion",
                     "metric_meta": ["ACC", "F1", "AUC"],
                     "kd_loss": "MseCriterion",
@@ -84,36 +83,14 @@ def train_model(data_dir, uncertainty_based_sampling=False, mc_dropout_samples=1
                     "data_source_dir": TASK_DATA_DIRS['sst'],
                     "data_process_opts": default_data_process_opts,
                     "task_type": "Classification",
-                },
+        },
         "rte": {
             "task_name": "rte",
             "data_format": "PremiseAndOneHypothesis",
             "encoder_type": "BERT",
             "enable_san": True,
-            "labels": ["contradiction", "neutral", "entailment"],
-            "metric_meta": ["ACC"],
-            "loss": "CeCriterion" if not focal_loss else "FocalLossCriterion",
-            "kd_loss": "MseCriterion",
-            "n_class": 3,
-            "split_names": [
-                "train",
-                "dev_matched",
-                "dev_mismatched",
-                "test_matched",
-                "test_mismatched",
-            ],
-            "data_source_dir": TASK_DATA_DIRS['mnli'],
-            "data_process_opts": {"header": True, "is_train": True, "multi_snli": False,},
-            "task_type": "Classification",
-        },
-        "qqp": {
-            "task_name": "qqp",
-            "data_format": "PremiseAndOneHypothesis",
-            "encoder_type": "BERT",
-            "enable_san": True,
-            "metric_meta": ["ACC", "F1"],
-            "loss": "CeCriterion" if not focal_loss else "FocalLossCriterion",
             "metric_meta": ["ACC", "F1", "AUC"],
+            "loss": "CeCriterion",
             "kd_loss": "MseCriterion",
             "n_class": 2,
             "split_names": default_split_names,
@@ -177,6 +154,5 @@ if __name__ == "__main__":
                     uncertainty_based_weight=args.uncertainty_based_weight,
                     rate_based_weight=args.rate_based_weight,
                     focal_loss=args.focal_loss,
-                    bilstm=args.bilstm
+                    bilstm=args.bilstm,
                     debug=args.debug)
-                    )

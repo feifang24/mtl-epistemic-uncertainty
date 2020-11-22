@@ -176,7 +176,6 @@ class MTDNNModel(MTDNNPretrainedModel):
         self.test_dataloaders_list = test_dataloaders_list
         self.test_datasets_list = self._configure_test_ds(test_datasets_list)
         self.output_dir = output_dir
-
         self.batch_bald = BatchBALD(num_samples=10, num_draw=500, shuffle_prop=0.0, reverse=True, reduction='mean')
         self.loss_weights = [None] * self.num_tasks
 
@@ -576,11 +575,7 @@ class MTDNNModel(MTDNNPretrainedModel):
             self.network.apply(apply_dropout)
             mc_sample_scores = torch.stack([self.mnetwork(*inputs) for _ in range(self.config.mc_dropout_samples)], -1)
             mc_sample_scores = F.softmax(mc_sample_scores, dim=1).data.cpu().numpy()
-            if self.config.batch_bald:
-                uncertainty = np.mean(self.batch_bald.get_uncertainties(mc_sample_scores))
-            else:
-                mc_sample_std = np.std(mc_sample_scores, axis=2)
-                uncertainty = np.mean(mc_sample_std)
+            uncertainty = np.mean(self.batch_bald.get_uncertainties(mc_sample_scores))
         else:
             uncertainty = 1.0
 
