@@ -48,7 +48,7 @@ def train_model(data_dir, uncertainty_based_sampling=False, mc_dropout_samples=1
                          uncertainty_based_weight=uncertainty_based_weight,
                          rate_based_weight=rate_based_weight,
                          focal_loss=focal_loss,
-                         encoder_type=EncoderModelType.LSTM if bilstm else EncoderModelType.BERT,
+                         bilstm=bilstm,
                          learning_rate=1e-2
                         )
 

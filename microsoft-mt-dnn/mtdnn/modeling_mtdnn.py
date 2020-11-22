@@ -56,7 +56,6 @@ from mtdnn.common.dropout_wrapper import DropoutWrapper
 from mtdnn.common.linear_pooler import LinearPooler
 from mtdnn.common.loss import LOSS_REGISTRY
 from mtdnn.common.metrics import calc_metrics
-from mtdnn.common.bilstm import BiLSTMElmoAttn
 from mtdnn.common.san import SANBERTNetwork, SANClassifier
 from mtdnn.common.uncertainty import BatchBALD
 from mtdnn.common.san_model import SanModel
@@ -161,10 +160,8 @@ class MTDNNModel(MTDNNPretrainedModel):
 
         # Initialize model config and update with training options
         self.config = config
-        self.tasks = data_processor.tasks # {task_name: task_idx}
         self.update_config_with_training_opts(
             decoder_opts,
-            self.tasks,
             task_types,
             dropout_list,
             loss_types,
@@ -172,6 +169,7 @@ class MTDNNModel(MTDNNPretrainedModel):
             tasks_nclass_list,
         )
         wandb.init(project='mtl-uncertainty-mini', entity='feifang24', config=self.config.to_dict())
+        self.tasks = data_processor.tasks # {task_name: task_idx}
         self.task_defs = task_defs
         self.multitask_train_dataloader = multitask_train_dataloader
         self.dev_dataloaders_list = dev_dataloaders_list
@@ -244,14 +242,11 @@ class MTDNNModel(MTDNNPretrainedModel):
         self.local_updates = 0
         self.train_loss = AverageMeter()
         self.train_loss_by_task = [AverageMeter() for _ in range(len(self.tasks))]
-        if self.config.encoder_type == EncoderModelType.LSTM:
-            self.network = BiLSTMElmoAttn(config=self.config,)
-        else:    
-            self.network = SANBERTNetwork(
-                init_checkpoint_model=self.bert_model,
-                pooler=self.pooler,
-                config=self.config,
-            )
+        self.network = SANBERTNetwork(
+            init_checkpoint_model=self.bert_model,
+            pooler=self.pooler,
+            config=self.config,
+        )
         if self.state_dict:
             self.network.load_state_dict(self.state_dict, strict=False)
         self.mnetwork = (
@@ -940,7 +935,6 @@ class MTDNNModel(MTDNNPretrainedModel):
     def update_config_with_training_opts(
         self,
         decoder_opts,
-        tasks,
         task_types,
         dropout_list,
         loss_types,
@@ -950,7 +944,6 @@ class MTDNNModel(MTDNNPretrainedModel):
         # Update configurations with options obtained from preprocessing training data
         setattr(self.config, "decoder_opts", decoder_opts)
         setattr(self.config, "task_types", task_types)
-        setattr(self.config, "tasks", tasks)
         setattr(self.config, "tasks_dropout_p", dropout_list)
         setattr(self.config, "loss_types", loss_types)
         setattr(self.config, "kd_loss_types", kd_loss_types)
