@@ -852,7 +852,7 @@ class MTDNNModel(MTDNNPretrainedModel):
                         }
             if save_scores:
                 score_file_prefix = f"{eval_ds_name}_{eval_type}_scores" \
-                                    + f'_{saved_epoch_idx}' if saved_epoch_idx is not None else ""
+                                    + (f'_{saved_epoch_idx}' if saved_epoch_idx is not None else "")
                 score_file = os.path.join(self.output_dir, score_file_prefix + ".json")
                 MTDNNCommonUtils.dump(score_file, results)
                 if self.config.use_glue_format:
