@@ -169,7 +169,7 @@ class MTDNNModel(MTDNNPretrainedModel):
             kd_loss_types,
             tasks_nclass_list,
         )
-        wandb.init(project='mini-mtl-uncertainty', config=self.config.to_dict())
+        wandb.init(project='mtl-uncertainty-mini', config=self.config.to_dict())
         self.tasks = data_processor.tasks # {task_name: task_idx}
         self.task_defs = task_defs
         self.multitask_train_dataloader = multitask_train_dataloader
@@ -664,8 +664,8 @@ class MTDNNModel(MTDNNPretrainedModel):
 
         if self.config.uncertainty_based_weight:
             rel_loss_weights = (1. / task_id_to_weights)
-            # self.loss_weights = rel_loss_weights * self.num_tasks / np.sum(rel_loss_weights)
-            self.loss_weights = rel_loss_weights * np.mean(task_id_to_weights)
+            self.loss_weights = rel_loss_weights * self.num_tasks / np.sum(rel_loss_weights)
+            # self.loss_weights = rel_loss_weights * np.mean(task_id_to_weights)
 
         num_batches = len(batches[start_idx:])
         # sample num_batches many tasks w/ replacement
@@ -684,7 +684,7 @@ class MTDNNModel(MTDNNPretrainedModel):
         """ Fit model to training datasets """
         epochs = epochs or self.config.epochs
         logger.info(f"Total number of params: {self.total_param}")
-        FIRST_STEP_TO_LOG = 100
+        FIRST_STEP_TO_LOG = 10
         for epoch in range(1, epochs + 1):
             logger.info(f"At epoch {epoch}")
             logger.info(
