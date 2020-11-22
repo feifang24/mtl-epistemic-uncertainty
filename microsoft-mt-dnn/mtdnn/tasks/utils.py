@@ -3,6 +3,8 @@
 import os
 import pdb
 from random import shuffle
+from collections import defaultdict
+from allennlp.data import Instance, Vocabulary, Token
 from sys import path
 
 import tensorflow.io.gfile as gfile

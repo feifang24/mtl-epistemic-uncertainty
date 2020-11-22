@@ -120,6 +120,9 @@ class MTDNNConfig(PretrainedConfig):
         fp16_opt_level="01",
         mkd_opt=0,
         weighted_on=False,
+        num_highway_layers=0,
+        classifier_hid_dim=512,
+        classifier_dropout=0.,
         uncertainty_based_sampling=False,
         mc_dropout_samples=100,
         uncertainty_based_weight=False,
@@ -199,6 +202,20 @@ class MTDNNConfig(PretrainedConfig):
         self.fp16_opt_level = fp16_opt_level
         self.mkd_opt = mkd_opt
         self.weighted_on = weighted_on
+    
+        # BiLSTM
+        self.num_highway_layers = num_highway_layers
+        self.classifier_dropout = classifier_dropout
+        self.classifier_hid_dim = classifier_hid_dim
+        if self.encoder_type == EncoderModelType.LSTM:
+            self.dropout_p = 0.2
+            self.num_hidden_layers = 2
+            self.hidden_size = 1500
+            self.learning_rate = 1e-4
+            self.optimizer="adam"
+            self.batch_size = 128
+
+        # sampling
         self.uncertainty_based_sampling = uncertainty_based_sampling
         self.mc_dropout_samples = mc_dropout_samples
         self.uncertainty_based_weight = uncertainty_based_weight
