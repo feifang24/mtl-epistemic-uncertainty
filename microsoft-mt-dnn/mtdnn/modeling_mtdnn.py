@@ -869,13 +869,14 @@ class MTDNNModel(MTDNNPretrainedModel):
         """
         Inference of model on test datasets
         """
-        self.config.batch_size_eval = 128
-        self.config.use_glue_format = True
         # Load a trained checkpoint if a valid model checkpoint
         if trained_model_chckpt and gfile.exists(trained_model_chckpt):
             logger.info(f"Running predictions using: {trained_model_chckpt}. This may take 3 minutes.")
             self.load(trained_model_chckpt)
             logger.info("Checkpoint loaded.")
+        
+        self.config.batch_size_eval = 128
+        self.config.use_glue_format = True
 
         # test eval
         for idx, dataset in enumerate(self.test_datasets_list):
