@@ -169,7 +169,7 @@ class MTDNNModel(MTDNNPretrainedModel):
             kd_loss_types,
             tasks_nclass_list,
         )
-        wandb.init(project='mtl-uncertainty-mini', config=self.config.to_dict())
+        wandb.init(project='mtl-uncertainty-mini', entity='feifang24', config=self.config.to_dict())
         self.tasks = data_processor.tasks # {task_name: task_idx}
         self.task_defs = task_defs
         self.multitask_train_dataloader = multitask_train_dataloader
@@ -732,7 +732,7 @@ class MTDNNModel(MTDNNPretrainedModel):
                         rate_of_training_by_task = current_train_loss_by_task / self.initial_train_loss_by_task
                         self.loss_weights = rate_of_training_by_task / np.mean(rate_of_training_by_task)
                     self._log_training(val_logs)
-                    
+
                 if self.config.save_per_updates_on and (
                     (self.local_updates)
                     % (
