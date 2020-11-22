@@ -168,7 +168,7 @@ class MTDNNModel(MTDNNPretrainedModel):
             kd_loss_types,
             tasks_nclass_list,
         )
-        wandb.init(project='mtl-uncertainty', config=self.config.to_dict())
+        wandb.init(project='mtl-uncertainty-mini', entity='feifang24', config=self.config.to_dict())
         self.tasks = data_processor.tasks # {task_name: task_idx}
         self.task_defs = task_defs
         self.multitask_train_dataloader = multitask_train_dataloader
@@ -178,6 +178,8 @@ class MTDNNModel(MTDNNPretrainedModel):
         self.output_dir = output_dir
 
         self.batch_bald = BatchBALD(num_samples=10, num_draw=500, shuffle_prop=0.0, reverse=True, reduction='mean')
+        self.loss_weights = [None] * self.num_tasks
+
         # Create the output_dir if it's doesn't exist
         MTDNNCommonUtils.create_directory_if_not_exists(self.output_dir)
 
@@ -444,7 +446,7 @@ class MTDNNModel(MTDNNPretrainedModel):
             inputs.append(None)
             inputs.append(None)
         inputs.append(task_id)
-        weight = None
+        weight = self.loss_weights[task_id]
         if self.config.weighted_on:
             if self.config.cuda:
                 weight = batch_data[batch_meta["factor"]].cuda(
@@ -473,7 +475,7 @@ class MTDNNModel(MTDNNPretrainedModel):
             )
             loss = loss + kd_loss
 
-        self.train_loss_by_task[task_id].update(loss.item(), batch_data[batch_meta["token_id"]].size(0))
+        self.train_loss_by_task[task_id].update(loss.item() / (self.loss_weights[task_id] if self.loss_weights[task_id] is not None else 1.), batch_data[batch_meta["token_id"]].size(0))
         self.train_loss.update(loss.item(), batch_data[batch_meta["token_id"]].size(0))
         # scale loss
         loss = loss / (self.config.grad_accumulation_step or 1)
@@ -643,26 +645,36 @@ class MTDNNModel(MTDNNPretrainedModel):
                 probs = weights / np.sum(weights)
             return probs
 
+        # reshuffle all batches; sort them by task_id
+        new_batches = [list(self.multitask_train_dataloader) for _ in range(5)]
+        for i in range(len(new_batches)):
+            random.shuffle(new_batches[i]) # this line somehow helps?
+        new_batches = [b for batches in new_batches for b in batches] # flatten
+        task_id_by_batch = [batch_meta["task_id"] for batch_meta, _ in new_batches]
+        batches_by_task = [[] for _ in range(self.num_tasks)]
+        for batch_idx, task_id in enumerate(task_id_by_batch):
+            batches_by_task[task_id].append(batch_idx)
+
         # convert task_weights from dict to list, where list[i] = weight of task_id i
         task_id_to_weights = [None] * self.num_tasks
         for task_name, weight in task_weights.items():
             task_id = self.tasks[task_name]
             task_id_to_weights[task_id] = weight
 
-        # reshuffle all batches; sort them by task_id
-        new_batches = list(self.multitask_train_dataloader)
-        random.shuffle(new_batches)
-        task_id_by_batch = [batch_meta["task_id"] for batch_meta, _ in new_batches]
-        batches_by_task = [[] for _ in range(self.num_tasks)]
-        for batch_idx, task_id in enumerate(task_id_by_batch):
-            batches_by_task[task_id].append(batch_idx)
+        task_id_to_weights = np.asarray(task_id_to_weights) # raw uncertainty estimates
 
-        # multiply weight by num batches
-        task_id_to_weights = [weight * len(batches_by_task[task_id]) for task_id, weight in enumerate(task_id_to_weights)]    
-            
+        task_probs = weights_to_probs(task_id_to_weights)
+
+        # multiply weight by num batches per task
+        # task_probs = weights_to_probs(task_id_to_weights * np.asarray([len(batches) for batches in batches_by_task]))  # comment out as see fit
+
+        if self.config.uncertainty_based_weight:
+            rel_loss_weights = (1. / task_id_to_weights)
+            self.loss_weights = rel_loss_weights * self.num_tasks / np.sum(rel_loss_weights)
+            # self.loss_weights = rel_loss_weights * np.mean(task_id_to_weights)
+
         num_batches = len(batches[start_idx:])
         # sample num_batches many tasks w/ replacement
-        task_probs = weights_to_probs(np.asarray(task_id_to_weights))
         task_indices_sampled = np.random.choice(self.num_tasks, num_batches, replace=True, p=task_probs)
 
         reranked_batches = [None] * num_batches
@@ -678,6 +690,7 @@ class MTDNNModel(MTDNNPretrainedModel):
         """ Fit model to training datasets """
         epochs = epochs or self.config.epochs
         logger.info(f"Total number of params: {self.total_param}")
+        FIRST_STEP_TO_LOG = 10
         for epoch in range(1, epochs + 1):
             logger.info(f"At epoch {epoch}")
             logger.info(
@@ -698,7 +711,7 @@ class MTDNNModel(MTDNNPretrainedModel):
                 task_id = batch_meta["task_id"]
                 self.update(batch_meta, batch_data)
                 if (
-                    self.local_updates == 1
+                    self.local_updates == FIRST_STEP_TO_LOG
                     or (self.local_updates)
                     % (self.config.log_per_updates * self.config.grad_accumulation_step)
                     == 0
@@ -714,10 +727,19 @@ class MTDNNModel(MTDNNPretrainedModel):
                             self.updates, self.train_loss.avg, time_left
                         )
                     )
-                    val_logs, uncertainties_by_task = self._eval_on_dev(epoch, save_dev_scores=True)
+
+                    val_logs, uncertainties_by_task = self._eval_on_dev(epoch, save_dev_scores=False)
+                    if self.local_updates == FIRST_STEP_TO_LOG:
+                        self.initial_train_loss_by_task = np.asarray([loss.avg for loss in self.train_loss_by_task])
+                    else:
+                        if self.config.uncertainty_based_sampling and idx < len(batches) - 1:
+                            batches = self._rerank_batches(batches, start_idx=idx+1, task_weights=uncertainties_by_task)
+                    if self.config.rate_based_weight:
+                        current_train_loss_by_task = np.asarray([loss.avg for loss in self.train_loss_by_task])
+                        rate_of_training_by_task = current_train_loss_by_task / self.initial_train_loss_by_task
+                        self.loss_weights = rate_of_training_by_task / np.mean(rate_of_training_by_task)
+
                     self._log_training(val_logs)
-                    if self.local_updates > 1 and self.config.uncertainty_based_sampling and idx < len(batches) - 1:
-                        batches = self._rerank_batches(batches, start_idx=idx+1, task_weights=uncertainties_by_task)
 
                 if self.config.save_per_updates_on and (
                     (self.local_updates)
@@ -777,6 +799,12 @@ class MTDNNModel(MTDNNPretrainedModel):
         log_dict['dev_loss'] = dev_loss_agg.avg
         log_dict.update({f'dev_loss_by_task/{task}': loss
                     for task, loss in dev_loss_by_task.items()})
+
+        self.dev_loss_by_task = [None] * self.num_tasks
+        for task_name, loss in dev_loss_by_task.items():
+            self.dev_loss_by_task[self.tasks[task_name]] = loss
+        self.dev_loss_by_task = np.asarray(self.dev_loss_by_task)
+
         return log_dict, uncertainties_by_task
 
     def _log_training(self, val_logs):
@@ -784,7 +812,11 @@ class MTDNNModel(MTDNNPretrainedModel):
                                 for task, task_idx in self.tasks.items()
                              }
         train_loss_agg = {'train_loss': self.train_loss.avg}
-        log_dict = {'global_step': self.updates, **train_loss_by_task, **train_loss_agg, **val_logs}
+        loss_weights_by_task = {}
+        if self.config.uncertainty_based_weight or self.config.rate_based_weight:
+            for task_name, task_id in self.tasks.items():
+                loss_weights_by_task[f'loss_weight/{task_name}'] = self.loss_weights[task_id] if self.loss_weights[task_id] is not None else 1.
+        log_dict = {'global_step': self.updates, **train_loss_by_task, **train_loss_agg, **val_logs, **loss_weights_by_task}
         wandb.log(log_dict)
 
 

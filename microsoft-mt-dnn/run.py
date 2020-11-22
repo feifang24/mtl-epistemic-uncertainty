@@ -18,25 +18,25 @@ from mtdnn.tokenizer_mtdnn import MTDNNTokenizer
 
 
 # Training parameters
-BATCH_SIZE = 16
-EVAL_BATCH_SIZE = 64
+BATCH_SIZE = 32
+EVAL_BATCH_SIZE = 128
 MULTI_GPU_ON = False
 MAX_SEQ_LEN = 128
 
-def train_model(data_dir, debug=False, uncertainty_based_sampling=False, mc_dropout_samples=100, focal_loss=False, batch_bald=False):
+
+def train_model(data_dir, uncertainty_based_sampling=False, mc_dropout_samples=100, uncertainty_based_weight=False, rate_based_weight=False, focal_loss=False, debug=False):
     # Define Configuration, Tasks and Model Objects
     ROOT_DIR = 'gs://cs330'
     MODEL_ID = datetime.now().strftime('%m%d%H%M')
     OUTPUT_DIR = os.path.join(ROOT_DIR, 'checkpoint', MODEL_ID)
     NUM_EPOCHS = 2 if debug else 4
-    LOG_PER_UPDATES = 4 if debug else 500
+    LOG_PER_UPDATES = 4 if debug else 200
 
 
     TASK_DATA_DIRS = {
-        'qqp': os.path.join(data_dir, "QQP"),
-        'mnli': os.path.join(data_dir, "MNLI"),
         'sst': os.path.join(data_dir, "SST-2"),
-        'mrpc': os.path.join(data_dir, "MRPC")
+        'mrpc': os.path.join(data_dir, "MRPC"),
+        'rte': os.path.join(data_dir, "RTE")
         }
 
     config = MTDNNConfig(batch_size=BATCH_SIZE,
@@ -46,7 +46,8 @@ def train_model(data_dir, debug=False, uncertainty_based_sampling=False, mc_drop
                          log_per_updates=LOG_PER_UPDATES,
                          uncertainty_based_sampling=uncertainty_based_sampling,
                          mc_dropout_samples=mc_dropout_samples,
-                         batch_bald=batch_bald,
+                         uncertainty_based_weight=uncertainty_based_weight,
+                         rate_based_weight=rate_based_weight,
                          focal_loss=focal_loss
                         )
 
@@ -58,8 +59,10 @@ def train_model(data_dir, debug=False, uncertainty_based_sampling=False, mc_drop
                     "data_format": "PremiseAndOneHypothesis",
                     "encoder_type": "BERT",
                     "enable_san": True,
-                    "metric_meta": ["ACC", "F1"],
+                    "metric_meta": ["ACC", "F1", "AUC"],
                     "loss": "CeCriterion" if not focal_loss else "FocalLossCriterion",
+                    "metric_meta": ["ACC", "F1", "AUC"],
+                    "loss": "CeCriterion",
                     "kd_loss": "MseCriterion",
                     "n_class": 2,
                     "split_names": default_split_names,
@@ -74,6 +77,7 @@ def train_model(data_dir, debug=False, uncertainty_based_sampling=False, mc_drop
                     "enable_san": False,
                     "metric_meta": ["ACC"],
                     "loss": "CeCriterion" if not focal_loss else "FocalLossCriterion",
+                    "metric_meta": ["ACC", "F1", "AUC"],
                     "kd_loss": "MseCriterion",
                     "n_class": 2,
                     "split_names": default_split_names,
@@ -81,10 +85,10 @@ def train_model(data_dir, debug=False, uncertainty_based_sampling=False, mc_drop
                     "data_process_opts": default_data_process_opts,
                     "task_type": "Classification",
                 },
-        "mnli": {
+        "rte": {
+            "task_name": "rte",
             "data_format": "PremiseAndOneHypothesis",
             "encoder_type": "BERT",
-            "dropout_p": 0.3,
             "enable_san": True,
             "labels": ["contradiction", "neutral", "entailment"],
             "metric_meta": ["ACC"],
@@ -109,10 +113,11 @@ def train_model(data_dir, debug=False, uncertainty_based_sampling=False, mc_drop
             "enable_san": True,
             "metric_meta": ["ACC", "F1"],
             "loss": "CeCriterion" if not focal_loss else "FocalLossCriterion",
+            "metric_meta": ["ACC", "F1", "AUC"],
             "kd_loss": "MseCriterion",
             "n_class": 2,
             "split_names": default_split_names,
-            "data_source_dir": TASK_DATA_DIRS['qqp'],
+            "data_source_dir": TASK_DATA_DIRS['rte'],
             "data_process_opts": default_data_process_opts,
             "task_type": "Classification",
         }
@@ -160,13 +165,15 @@ if __name__ == "__main__":
     parser.add_argument('--uncertainty-based-sampling', action='store_true', help='Use uncertainty based batch sampling')
     parser.add_argument('--mc-dropout-samples', default=100, type=int, help='Number of MC Dropout sampling iterations.')
     parser.add_argument('--focal-loss', action='store_true', help='Use focal loss.')
-    parser.add_argument('--batch-bald', action='store_true', help='Use batch bald uncertainty.')
+    parser.add_argument('--uncertainty-based-weight', action='store_true', help='Use uncertainty based weight in loss weighting')
+    parser.add_argument('--rate-based-weight', action='store_true', help='Use training rate-based weight in loss weighting')
     args = parser.parse_args()
 
     if args.train:
         train_model(args.data_dir,
-                    debug=args.debug,
                     uncertainty_based_sampling=args.uncertainty_based_sampling,
                     mc_dropout_samples=args.mc_dropout_samples,
-                    batch_bald=args.batch_bald,
-                    focal_loss=args.focal_loss)
+                    uncertainty_based_weight=args.uncertainty_based_weight,
+                    rate_based_weight=args.rate_based_weight,
+                    focal_loss=args.focal_loss,
+                    debug=args.debug)
