@@ -664,7 +664,8 @@ class MTDNNModel(MTDNNPretrainedModel):
 
         if self.config.uncertainty_based_weight:
             rel_loss_weights = (1. / task_id_to_weights)
-            self.loss_weights = rel_loss_weights * self.num_tasks / np.sum(rel_loss_weights)
+            self.loss_weights = (rel_loss_weights * self.num_tasks / np.sum(rel_loss_weights)) * \
+                                    (np.mean(self.dev_loss_by_task) / self.dev_loss_by_task)
             # self.loss_weights = rel_loss_weights * np.mean(task_id_to_weights)
 
         num_batches = len(batches[start_idx:])
@@ -722,15 +723,15 @@ class MTDNNModel(MTDNNPretrainedModel):
                         )
                     )
                     val_logs, uncertainties_by_task = self._eval_on_dev(epoch, save_dev_scores=False)
-                    if self.local_updates == FIRST_STEP_TO_LOG:
+                    if self.local_updates > FIRST_STEP_TO_LOG:
                         self.initial_train_loss_by_task = np.asarray([loss.avg for loss in self.train_loss_by_task])
-                    else:
                         if self.config.uncertainty_based_sampling and idx < len(batches) - 1:
                             batches = self._rerank_batches(batches, start_idx=idx+1, task_weights=uncertainties_by_task)
-                    if self.config.rate_based_weight:
-                        current_train_loss_by_task = np.asarray([loss.avg for loss in self.train_loss_by_task])
-                        rate_of_training_by_task = current_train_loss_by_task / self.initial_train_loss_by_task
-                        self.loss_weights = rate_of_training_by_task / np.mean(rate_of_training_by_task)
+                        if self.config.rate_based_weight:
+                            current_train_loss_by_task = np.asarray([loss.avg for loss in self.train_loss_by_task])
+                            rate_of_training_by_task = current_train_loss_by_task / self.initial_train_loss_by_task
+                            self.loss_weights = (rate_of_training_by_task / np.mean(rate_of_training_by_task)) * \
+                                                    (np.mean(current_train_loss_by_task) / current_train_loss_by_task)
                     self._log_training(val_logs)
 
                 if self.config.save_per_updates_on and (
