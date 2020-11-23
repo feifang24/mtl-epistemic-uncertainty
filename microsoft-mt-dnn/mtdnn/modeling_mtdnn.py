@@ -722,7 +722,8 @@ class MTDNNModel(MTDNNPretrainedModel):
                             self.updates, self.train_loss.avg, time_left
                         )
                     )
-                    val_logs, uncertainties_by_task = self._eval_on_dev(epoch, save_dev_scores=False)
+                    val_logs, uncertainties_by_task = self._eval(epoch, save_scores=False, eval_type='dev')
+                    test_logs, _ = self._eval(epoch, save_scores=False, eval_type='test')
                     if self.local_updates > FIRST_STEP_TO_LOG:
                         self.initial_train_loss_by_task = np.asarray([loss.avg for loss in self.train_loss_by_task])
                         if self.config.uncertainty_based_sampling and idx < len(batches) - 1:
@@ -732,7 +733,7 @@ class MTDNNModel(MTDNNPretrainedModel):
                             rate_of_training_by_task = current_train_loss_by_task / self.initial_train_loss_by_task
                             self.loss_weights = (rate_of_training_by_task / np.mean(rate_of_training_by_task)) * \
                                                     (np.mean(current_train_loss_by_task) / current_train_loss_by_task)
-                    self._log_training(val_logs)
+                    self._log_training({**val_logs, **test_logs)
 
                 if self.config.save_per_updates_on and (
                     (self.local_updates)
@@ -751,52 +752,62 @@ class MTDNNModel(MTDNNPretrainedModel):
             # Eval and save checkpoint after each epoch
             logger.info('=' * 5 + f' End of EPOCH {epoch} ' + '=' * 5)
             logger.info(f'Train loss (epoch avg): {self.train_loss.avg}')
-            val_logs, uncertainties_by_task = self._eval_on_dev(epoch, save_dev_scores=True)
-            self._log_training(val_logs)
+            val_logs, uncertainties_by_task = self._eval(epoch, save_scores=True, eval_type='dev')
+            test_logs, _ = self._eval(epoch, save_scores=True, eval_type='test')
+            self._log_training({**val_logs, **test_logs)
 
-            model_file = os.path.join(self.output_dir, "model_{}.pt".format(epoch))
-            logger.info(f"Saving mt-dnn model to {model_file}")
-            self.save(model_file)
+            # model_file = os.path.join(self.output_dir, "model_{}.pt".format(epoch))
+            # logger.info(f"Saving mt-dnn model to {model_file}")
+            # self.save(model_file)
 
-    def _eval_on_dev(self, epoch, save_dev_scores):
+    def _eval(self, epoch, save_scores, eval_type='dev'):
+        if eval_type not in {'dev', 'test'}:
+            raise ValueError("eval_type must be one of the following: 'dev' or 'test'.")
+        is_dev = eval_type == 'dev'
+
         log_dict = {}
-        dev_loss_agg = AverageMeter()
-        dev_loss_by_task = {}
+        loss_agg = AverageMeter()
+        loss_by_task = {}
         uncertainties_by_task = {}
         for idx, dataset in enumerate(self.test_datasets_list):
-            logger.info(f"Evaluating on dev ds {idx}: {dataset.upper()}")
+            logger.info(f"Evaluating on {eval_type} ds {idx}: {dataset.upper()}")
             prefix = dataset.split("_")[0]
-            results = self._predict(idx, prefix, dataset, eval_type='dev', saved_epoch_idx=epoch, save_scores=save_dev_scores)
+            results = self._predict(idx, prefix, dataset, eval_type=eval_type, saved_epoch_idx=epoch, save_scores=save_scores)
 
             avg_loss = results['avg_loss']
             num_samples = results['num_samples']
-            dev_loss_agg.update(avg_loss, n=num_samples)
-            dev_loss_by_task[dataset] = avg_loss
-            logger.info(f"Task {dataset} -- Dev loss: {avg_loss:.3f}")
+            loss_agg.update(avg_loss, n=num_samples)
+            loss_by_task[dataset] = avg_loss
+            if is_dev: logger.info(f"Task {dataset} -- {eval_type} loss: {avg_loss:.3f}")
 
             metrics = results['metrics']
             for key, val in metrics.items():
-                logger.info(f"Task {dataset} -- Dev {key}: {val:.3f}")
-                log_dict[f'{dataset}/dev_{key}'] = val
+                if is_dev: logger.info(f"Task {dataset} -- {eval_type} {key}: {val:.3f}")
+                log_dict[f'{dataset}/{eval_type}_{key}'] = val
 
             uncertainty = results['uncertainty']
-            logger.info(f"Task {dataset} -- Dev uncertainty: {uncertainty:.3f}")
-            log_dict[f'uncertainty_by_task/{dataset}'] = uncertainty
+            if is_dev: logger.info(f"Task {dataset} -- {eval_type} uncertainty: {uncertainty:.3f}")
+            log_dict[f'{eval_type}_uncertainty_by_task/{dataset}'] = uncertainty
             if prefix not in uncertainties_by_task:
                 uncertainties_by_task[prefix] = uncertainty
             else:
                 # exploiting the fact that only mnli has two dev sets
                 uncertainties_by_task[prefix] += uncertainty
                 uncertainties_by_task[prefix] /= 2
-        logger.info(f'Dev loss: {dev_loss_agg.avg}')
-        log_dict['dev_loss'] = dev_loss_agg.avg
-        log_dict.update({f'dev_loss_by_task/{task}': loss
-                    for task, loss in dev_loss_by_task.items()})
+        if is_dev: logger.info(f'{eval_type} loss: {loss_agg.avg}')
+        log_dict[f'{eval_type}_loss'] = loss_agg.avg
+        log_dict.update({f'{eval_type}_loss_by_task/{task}': loss
+                    for task, loss in loss_by_task.items()})
 
-        self.dev_loss_by_task = [None] * self.num_tasks
-        for task_name, loss in dev_loss_by_task.items():
-            self.dev_loss_by_task[self.tasks[task_name]] = loss
-        self.dev_loss_by_task = np.asarray(self.dev_loss_by_task)
+        loss_by_task_id = [None] * self.num_tasks
+        for task_name, loss in loss_by_task.items():
+            loss_by_task_id[self.tasks[task_name]] = loss
+        loss_by_task_id = np.asarray(loss_by_task_id)
+
+        if is_dev:
+            self.dev_loss_by_task = loss_by_task_id
+        else:
+            self.test_loss_by_task = loss_by_task_id
 
         return log_dict, uncertainties_by_task
 
@@ -841,7 +852,7 @@ class MTDNNModel(MTDNNPretrainedModel):
                     data,
                     metric_meta=self.task_defs.metric_meta_map[eval_ds_prefix],
                     use_cuda=self.config.cuda,
-                    with_label=is_dev,
+                    with_label=True,
                     label_mapper=label_dict,
                     task_type=self.task_defs.task_type_map[eval_ds_prefix]
                 )
