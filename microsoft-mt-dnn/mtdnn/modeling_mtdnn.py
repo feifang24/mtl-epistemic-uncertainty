@@ -853,7 +853,7 @@ class MTDNNModel(MTDNNPretrainedModel):
                         }
             if save_scores:
                 score_file_prefix = f"{eval_ds_name}_{eval_type}_scores" \
-                                    + f'_{saved_epoch_idx}' if saved_epoch_idx is not None else ""
+                                    + (f'_{saved_epoch_idx}' if saved_epoch_idx is not None else "")
                 score_file = os.path.join(self.output_dir, score_file_prefix + ".json")
                 MTDNNCommonUtils.dump(score_file, results)
                 if self.config.use_glue_format:
@@ -870,12 +870,14 @@ class MTDNNModel(MTDNNPretrainedModel):
         """
         Inference of model on test datasets
         """
-
         # Load a trained checkpoint if a valid model checkpoint
         if trained_model_chckpt and gfile.exists(trained_model_chckpt):
             logger.info(f"Running predictions using: {trained_model_chckpt}. This may take 3 minutes.")
             self.load(trained_model_chckpt)
             logger.info("Checkpoint loaded.")
+        
+        self.config.batch_size_eval = 128
+        self.config.use_glue_format = True
 
         # test eval
         for idx, dataset in enumerate(self.test_datasets_list):
