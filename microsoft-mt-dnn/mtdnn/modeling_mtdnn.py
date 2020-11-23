@@ -725,7 +725,9 @@ class MTDNNModel(MTDNNPretrainedModel):
                     val_logs, uncertainties_by_task = self._eval(epoch, save_scores=False, eval_type='dev')
                     test_logs, _ = self._eval(epoch, save_scores=False, eval_type='test')
                     if self.local_updates > FIRST_STEP_TO_LOG:
-                        self.initial_train_loss_by_task = np.asarray([loss.avg for loss in self.train_loss_by_task])
+                        if self.local_updates == self.config.log_per_updates * self.config.grad_accumulation_step:
+                            self.initial_uncertainties_by_task = uncertainties_by_task
+                            self.initial_train_loss_by_task = np.asarray([loss.avg for loss in self.train_loss_by_task])
                         if self.config.uncertainty_based_sampling and idx < len(batches) - 1:
                             batches = self._rerank_batches(batches, start_idx=idx+1, task_weights=uncertainties_by_task)
                         if self.config.rate_based_weight:
