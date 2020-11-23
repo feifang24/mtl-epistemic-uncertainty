@@ -169,7 +169,7 @@ class MTDNNModel(MTDNNPretrainedModel):
             kd_loss_types,
             tasks_nclass_list,
         )
-        wandb.init(project='mtl-uncertainty-mini', entity='feifang24', config=self.config.to_dict())
+        wandb.init(project='mtl-uncertainty-final', entity='feifang24', config=self.config.to_dict())
         self.tasks = data_processor.tasks # {task_name: task_idx}
         self.task_defs = task_defs
         self.multitask_train_dataloader = multitask_train_dataloader
