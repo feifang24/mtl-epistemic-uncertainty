@@ -733,7 +733,7 @@ class MTDNNModel(MTDNNPretrainedModel):
                             rate_of_training_by_task = current_train_loss_by_task / self.initial_train_loss_by_task
                             self.loss_weights = (rate_of_training_by_task / np.mean(rate_of_training_by_task)) * \
                                                     (np.mean(current_train_loss_by_task) / current_train_loss_by_task)
-                    self._log_training({**val_logs, **test_logs)
+                    self._log_training({**val_logs, **test_logs})
 
                 if self.config.save_per_updates_on and (
                     (self.local_updates)
@@ -754,7 +754,7 @@ class MTDNNModel(MTDNNPretrainedModel):
             logger.info(f'Train loss (epoch avg): {self.train_loss.avg}')
             val_logs, uncertainties_by_task = self._eval(epoch, save_scores=True, eval_type='dev')
             test_logs, _ = self._eval(epoch, save_scores=True, eval_type='test')
-            self._log_training({**val_logs, **test_logs)
+            self._log_training({**val_logs, **test_logs})
 
             # model_file = os.path.join(self.output_dir, "model_{}.pt".format(epoch))
             # logger.info(f"Saving mt-dnn model to {model_file}")
