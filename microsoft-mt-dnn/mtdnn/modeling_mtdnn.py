@@ -631,7 +631,7 @@ class MTDNNModel(MTDNNPretrainedModel):
             score = score.reshape(-1).tolist()
         return score, predict, batch_meta["label"], loss, uncertainty
 
-    def _rerank_batches(self, batches, start_idx, task_weights, softmax_task_weights=False):
+    def _rerank_batches(self, batches, start_idx, task_id_to_weights, softmax_task_weights=False):
         def weights_to_probs(weights):
             if softmax_task_weights:
                 probs = softmax(weights)
@@ -648,14 +648,6 @@ class MTDNNModel(MTDNNPretrainedModel):
         batches_by_task = [[] for _ in range(self.num_tasks)]
         for batch_idx, task_id in enumerate(task_id_by_batch):
             batches_by_task[task_id].append(batch_idx)
-
-        # convert task_weights from dict to list, where list[i] = weight of task_id i
-        task_id_to_weights = [None] * self.num_tasks
-        for task_name, weight in task_weights.items():
-            task_id = self.tasks[task_name]
-            task_id_to_weights[task_id] = weight
-
-        task_id_to_weights = np.asarray(task_id_to_weights) # raw uncertainty estimates
 
         task_probs = weights_to_probs(task_id_to_weights)
 
@@ -696,7 +688,7 @@ class MTDNNModel(MTDNNPretrainedModel):
             # Create batches and train
             batches = list(self.multitask_train_dataloader)
             if self.config.uncertainty_based_sampling and epoch > 1:
-                batches = self._rerank_batches(batches, start_idx=0, task_weights=uncertainties_by_task)
+                batches = self._rerank_batches(batches, start_idx=0, task_id_to_weights=self.smoothed_uncertainties_by_task)
             for idx in range(len(batches)):
                 batch_meta, batch_data = batches[idx]
                 batch_meta, batch_data = MTDNNCollater.patch_data(
@@ -726,10 +718,14 @@ class MTDNNModel(MTDNNPretrainedModel):
                     test_logs, _ = self._eval(epoch, save_scores=False, eval_type='test')
                     if self.local_updates > FIRST_STEP_TO_LOG:
                         if self.local_updates == self.config.log_per_updates * self.config.grad_accumulation_step:
-                            self.initial_uncertainties_by_task = uncertainties_by_task
+                            self.smoothed_uncertainties_by_task = uncertainties_by_task
                             self.initial_train_loss_by_task = np.asarray([loss.avg for loss in self.train_loss_by_task])
+                        else:
+                            alpha = self.config.smooth_uncertainties
+                            self.smoothed_uncertainties_by_task = alpha * self.smoothed_uncertainties_by_task + \
+                                                                    (1 - alpha) * uncertainties_by_task
                         if self.config.uncertainty_based_sampling and idx < len(batches) - 1:
-                            batches = self._rerank_batches(batches, start_idx=idx+1, task_weights=uncertainties_by_task)
+                            batches = self._rerank_batches(batches, start_idx=idx+1, task_id_to_weights=self.smoothed_uncertainties_by_task)
                         if self.config.rate_based_weight:
                             current_train_loss_by_task = np.asarray([loss.avg for loss in self.train_loss_by_task])
                             rate_of_training_by_task = current_train_loss_by_task / self.initial_train_loss_by_task
@@ -810,8 +806,15 @@ class MTDNNModel(MTDNNPretrainedModel):
             self.dev_loss_by_task = loss_by_task_id
         else:
             self.test_loss_by_task = loss_by_task_id
+        
+        # convert uncertainties_by_task from dict to list, where list[i] = weight of task_id i
+        uncertainties_by_task_id = [None] * self.num_tasks
+        for task_name, weight in uncertainties_by_task.items():
+            task_id = self.tasks[task_name]
+            uncertainties_by_task_id[task_id] = weight
+        uncertainties_by_task_id = np.asarray(uncertainties_by_task_id)
 
-        return log_dict, uncertainties_by_task
+        return log_dict, uncertainties_by_task_id
 
     def _log_training(self, val_logs):
         train_loss_by_task = {f'train_loss_by_task/{task}': self.train_loss_by_task[task_idx].avg

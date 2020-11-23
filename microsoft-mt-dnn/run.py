@@ -23,7 +23,13 @@ EVAL_BATCH_SIZE = 128
 MULTI_GPU_ON = False
 MAX_SEQ_LEN = 128
 
-def train_model(data_dir, uncertainty_based_sampling=False, mc_dropout_samples=100, uncertainty_based_weight=False, rate_based_weight=False, debug=False):
+def train_model(data_dir,
+                uncertainty_based_sampling=False,
+                mc_dropout_samples=100,
+                uncertainty_based_weight=False,
+                rate_based_weight=False,
+                smooth_uncertainties=0.,
+                debug=False):
     # Define Configuration, Tasks and Model Objects
     ROOT_DIR = 'gs://cs330'
     MODEL_ID = datetime.now().strftime('%m%d%H%M')
@@ -47,6 +53,7 @@ def train_model(data_dir, uncertainty_based_sampling=False, mc_dropout_samples=1
                          mc_dropout_samples=mc_dropout_samples,
                          uncertainty_based_weight=uncertainty_based_weight,
                          rate_based_weight=rate_based_weight,
+                         smooth_uncertainties=smooth_uncertainties,
                         )
 
     default_data_process_opts = {"header": True, "is_train": True, "multi_snli": False,}
@@ -139,6 +146,9 @@ if __name__ == "__main__":
     parser.add_argument('--mc-dropout-samples', default=100, type=int, help='Number of MC Dropout sampling iterations.')
     parser.add_argument('--uncertainty-based-weight', action='store_true', help='Use uncertainty based weight in loss weighting')
     parser.add_argument('--rate-based-weight', action='store_true', help='Use training rate-based weight in loss weighting')
+    parser.add_argument('--smooth-uncertainties', default=0., type=float,
+                        help='Rate to use if taking EMA of uncertainties to smooth out changes in sampling distribution.')
+
     args = parser.parse_args()
 
     if args.train:
@@ -147,4 +157,5 @@ if __name__ == "__main__":
                     mc_dropout_samples=args.mc_dropout_samples, 
                     uncertainty_based_weight=args.uncertainty_based_weight,
                     rate_based_weight=args.rate_based_weight,
+                    smooth_uncertainties=args.smooth_uncertainties,
                     debug=args.debug)

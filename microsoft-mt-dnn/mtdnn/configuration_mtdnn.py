@@ -123,6 +123,7 @@ class MTDNNConfig(PretrainedConfig):
         uncertainty_based_sampling=False,
         mc_dropout_samples=100,
         uncertainty_based_weight=False,
+        smooth_uncertainties=0.,
         rate_based_weight=False,
         **kwargs,
     ):
@@ -202,5 +203,6 @@ class MTDNNConfig(PretrainedConfig):
         self.uncertainty_based_sampling = uncertainty_based_sampling
         self.mc_dropout_samples = mc_dropout_samples
         self.uncertainty_based_weight = uncertainty_based_weight
+        self.smooth_uncertainties = smooth_uncertainties
         self.rate_based_weight = rate_based_weight
         self.kwargs = kwargs
